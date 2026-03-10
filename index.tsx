@@ -1236,23 +1236,23 @@ Você receberá um ou mais arquivos de mídia, cada um delimitado por marcadores
     *   Crie uma sub-seção chamada \`#### Transcrição do Diálogo ####\`.
     *   O formato do diálogo **DEVE** ser uma lista, com cada fala em uma nova linha, começando com um hífen.
 
-3.  **Formato da Linha de Diálogo (REGRAS ESPECÍFICAS):**
-    *   **Para ARQUIVOS DE ÁUDIO (ex: .mp3, .wav, .ogg, .m4a, .flac):**
-        *   NÃO identifique o interlocutor. A transcrição deve ser contínua, sem rótulos de quem está falando.
-        *   Se a opção "Inserir o tempo" estiver ATIVA, comece a linha com o timestamp (\`HH:MM:SS\`), seguido pelo diálogo. Exemplo: \`- 00:01:23: [diálogo]\`.
-        *   Se "Inserir o tempo" estiver INATIVA, comece a linha apenas com o diálogo. Exemplo: \`- [diálogo]\`.
-    *   **Para ARQUIVOS DE VÍDEO (ex: .mp4, .mov, .webm, .avi, .mkv):**
-        *   Siga as opções ativadas pelo usuário.
-        *   **Opção "Inserir o tempo":** Se ATIVA, comece com o timestamp \`HH:MM:SS\`.
-        *   **Opção "Identificar o interlocutor":** Se ATIVA, adicione o nome do interlocutor (ex: \`FULANO:\`). Se o nome for desconhecido, use "INTERLOCUTOR 1", "INTERLOCUTOR 2", etc.
-        *   **Exemplos de VÍDEO:** \`- 00:01:23 - FULANO: [diálogo]\`, \`- FULANO: [diálogo]\`, \`- 00:01:23: [diálogo]\`, \`- [diálogo]\`.
+3.  **Formato da Linha de Diálogo (REGRAS GERAIS PARA TODOS OS ARQUIVOS):**
+    *   Siga ESTREITAMENTE as opções ativadas pelo usuário e suas considerações.
+    *   **Opção "Inserir o tempo":** Se ATIVA, comece a linha com o timestamp (\`HH:MM:SS\`).
+    *   **Opção "Identificar o interlocutor":** Se ATIVA, identifique quem está falando (ex: \`NOME:\`). Se o nome for desconhecido, use "INTERLOCUTOR 1", "INTERLOCUTOR 2", etc.
+    *   **Considerações do Usuário:** Estas instruções são SOBERANAS e ABSOLUTAS. Se o usuário fornecer nomes (ex: "Roberto e Litiane"), use-os obrigatoriamente para identificar os interlocutores, mesmo em arquivos de áudio (.mp3, .ogg, etc.).
+    *   **Exemplos de Formatação:** 
+        - \`- 00:01:23 - NOME: [diálogo]\` (Tempo e Identificação ativos)
+        - \`- NOME: [diálogo]\` (Apenas Identificação ativa)
+        - \`- 00:01:23: [diálogo]\` (Apenas Tempo ativo)
+        - \`- [diálogo]\` (Nenhuma opção ativa)
 
-### Opções Ativadas pelo Usuário (Lembre-se da regra especial para áudio)
+### Opções Ativadas pelo Usuário
 *   Identificar o interlocutor: ${transcriberOptions.identifySpeaker ? 'SIM' : 'NÃO'}
 *   Inserir o tempo na transcrição: ${transcriberOptions.insertTimestamp ? 'SIM' : 'NÃO'}
 
-### Considerações do Usuário (Use para guiar a identificação e o contexto)
-${transcriberConsiderations.trim() ? transcriberConsiderations : "Ex.: Trata-se de uma audiência de custódia; Trata-se de uma conversa entre Fulano e Beltrano, sendo que quem inicia a conversa é Fulano..."}
+### Considerações do Usuário (ORDENS ABSOLUTAS)
+${transcriberConsiderations.trim() ? transcriberConsiderations : "Nenhuma consideração adicional fornecida."}
 
 ---
 Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regras.
