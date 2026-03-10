@@ -1,0 +1,6 @@
+{
+  "name": "GeradorRelatorioPolicial",
+  "description": "Um aplicativo para gerar relatórios policiais com base em PDFs, utilizando a API Gemini.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
