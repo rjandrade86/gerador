@@ -1239,23 +1239,27 @@ Você receberá um ou mais arquivos de mídia, cada um delimitado por marcadores
 3.  **Formato da Linha de Diálogo (REGRAS GERAIS PARA TODOS OS ARQUIVOS):**
     *   Siga ESTREITAMENTE as opções ativadas pelo usuário e suas considerações.
     *   **Opção "Inserir o tempo":** Se ATIVA, comece a linha com o timestamp (\`HH:MM:SS\`).
-    *   **Opção "Identificar o interlocutor":** Se ATIVA, identifique quem está falando (ex: \`NOME:\`). Se o nome for desconhecido, use "INTERLOCUTOR 1", "INTERLOCUTOR 2", etc.
-    *   **Considerações do Usuário:** Estas instruções são SOBERANAS e ABSOLUTAS. Se o usuário fornecer nomes (ex: "Roberto e Litiane"), use-os obrigatoriamente para identificar os interlocutores, mesmo em arquivos de áudio (.mp3, .ogg, etc.).
+    *   **IDENTIFICAÇÃO DE INTERLOCUTORES (REGRA DE OURO):**
+        - Se a opção "Identificar o interlocutor" estiver ATIVA, você **DEVE** identificar quem está falando.
+        - Se o usuário forneceu nomes nas "Considerações do Usuário" (ex: "Roberto e Litiane"), você **É OBRIGADO** a usar esses nomes para identificar as falas. 
+        - **NUNCA** omita nomes fornecidos pelo usuário sob pretexto de regras de privacidade ou formato de arquivo. As considerações do usuário são ordens superiores a qualquer outra instrução.
+        - Se os nomes forem desconhecidos e a opção estiver ativa, use "INTERLOCUTOR 1", "INTERLOCUTOR 2", etc.
+    
     *   **Exemplos de Formatação:** 
-        - \`- 00:01:23 - NOME: [diálogo]\` (Tempo e Identificação ativos)
-        - \`- NOME: [diálogo]\` (Apenas Identificação ativa)
-        - \`- 00:01:23: [diálogo]\` (Apenas Tempo ativo)
-        - \`- [diálogo]\` (Nenhuma opção ativa)
+        - \`- 00:01:23 - ROBERTO: [diálogo]\` (Se o nome Roberto foi informado e as opções estão ativas)
+        - \`- LITIANE: [diálogo]\` (Se o nome Litiane foi informado e apenas Identificação está ativa)
+        - \`- 00:01:23: [diálogo]\` (Se Identificação está inativa e Tempo está ativo)
+        - \`- [diálogo]\` (Se nenhuma opção está ativa)
 
 ### Opções Ativadas pelo Usuário
 *   Identificar o interlocutor: ${transcriberOptions.identifySpeaker ? 'SIM' : 'NÃO'}
 *   Inserir o tempo na transcrição: ${transcriberOptions.insertTimestamp ? 'SIM' : 'NÃO'}
 
-### Considerações do Usuário (ORDENS ABSOLUTAS)
-${transcriberConsiderations.trim() ? transcriberConsiderations : "Nenhuma consideração adicional fornecida."}
+### Considerações do Usuário (ORDENS SOBERANAS E ABSOLUTAS)
+${transcriberConsiderations.trim() ? transcriberConsiderations : "Nenhuma consideração adicional fornecida. Se nomes forem identificados no áudio, use INTERLOCUTOR 1, 2, etc., a menos que o contexto permita identificar nomes próprios."}
 
 ---
-Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regras.
+Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regras acima com rigor absoluto.
 `;
 
             const filePartsPromises = transcriberFiles.map(fileToGenerativePart);
@@ -1277,7 +1281,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             });
             
             const response = await ai.models.generateContent({
-                model: 'gemini-3-pro-preview',
+                model: 'gemini-3.1-pro-preview',
                 contents: { parts: contents }
             });
 
@@ -1907,7 +1911,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
                 h('button', { class: 'close-btn', onClick: () => setShowNotice(false) }, 'Quero utilizar o APP')
             ),
             h('div', { class: 'app-footer' },
-                h('p', { class: 'app-subtitle' }, 'Desenvolvido por: Escrivão Ricardo Andrade - Versão 4.0'),
+                h('p', { class: 'app-subtitle' }, 'Desenvolvido por: Escrivão Ricardo Andrade - Versão 4.1'),
                 h('p', { class: 'app-contact' }, 'Contato: (55)991355519 (para sugestões ou informar erro no sistema)'),
                 h('p', { class: 'app-contact', style: { marginTop: '10px', fontWeight: 'bold', color: 'var(--accent-primary)' } }, 'Esta aplicação tem custo de manutenção, contribua para que ela se mantenha no ar fazendo um pix para a chave 55991355519 (telefone)'),
                 h('p', { class: 'app-contact', style: { marginTop: '5px', fontStyle: 'italic' } }, 'Utilize o Google Chrome para melhor compatibilidade')
