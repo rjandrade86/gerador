@@ -1904,9 +1904,9 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             activeTab === 'transcriber' ? renderTranscriberTab() :
             renderHistoryTab(),
             showNotice && h('div', { class: 'floating-notice' },
-                h('h3', null, 'Mês de Abril'),
-                h('p', null, 'Valor gasto: ', h('span', { class: 'value-spent' }, 'R$ 310,00')),
-                h('p', null, 'Valor arrecadado: ', h('span', { class: 'value-earned' }, 'R$ 350,00')),
+                h('h3', null, 'Mês de Maio'),
+                h('p', null, 'Valor gasto: ', h('span', { class: 'value-spent' }, 'R$ 388,00')),
+                h('p', null, 'Valor arrecadado: ', h('span', { class: 'value-earned' }, 'R$ 0,00')),
                 h('p', { class: 'support-text' }, 'Ajude a manter o app ativo'),
                 h('button', { class: 'close-btn', onClick: () => setShowNotice(false) }, 'Quero utilizar o APP')
             ),
