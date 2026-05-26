@@ -570,7 +570,7 @@ const App = () => {
             }
 
             const geminiInternalResponse: GeminiGenerateContentResponse = await ai.models.generateContent({ 
-                model: 'gemini-3-pro-preview',
+                model: 'gemini-3.1-pro-preview',
                 contents: { parts: parts }
             });
 
@@ -953,7 +953,7 @@ const App = () => {
             }
 
             const response = await ai.models.generateContent({
-                model: 'gemini-3-pro-preview',
+                model: 'gemini-3.1-pro-preview',
                 contents: { parts: [{ text: prompt }, ...resolvedFileParts] }
             });
 
@@ -1059,7 +1059,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
             });
 
             const response = await ai.models.generateContent({
-                model: 'gemini-3-pro-preview',
+                model: 'gemini-3.1-pro-preview',
                 contents: { parts: parts }
             });
 
@@ -1152,7 +1152,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
             prompt += `\n\n--- Início do Texto do Usuário para ser Formalizado ---\n${formalizerInputText}\n--- Fim do Texto do Usuário ---`;
 
             const response = await ai.models.generateContent({
-                model: 'gemini-3-pro-preview',
+                model: 'gemini-3.1-pro-preview',
                 contents: { parts: [{ text: prompt }] }
             });
 
@@ -1906,7 +1906,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             showNotice && h('div', { class: 'floating-notice' },
                 h('h3', null, 'Mês de Maio'),
                 h('p', null, 'Valor gasto: ', h('span', { class: 'value-spent' }, 'R$ 388,00')),
-                h('p', null, 'Valor arrecadado: ', h('span', { class: 'value-earned' }, 'R$ 300,00')),
+                h('p', null, 'Valor arrecadado: ', h('span', { class: 'value-earned' }, 'R$ 600,00')),
                 h('p', { class: 'support-text' }, 'Ajude a manter o app ativo'),
                 h('button', { class: 'close-btn', onClick: () => setShowNotice(false) }, 'Quero utilizar o APP')
             ),
