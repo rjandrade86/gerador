@@ -1,0 +1,67 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    
+    function isVerified() {
+      // In this specific case, without email verification being required to use the app immediately, we may want to skip it, but the skill says:
+      // "For all standard write operations... you MUST strictly mandate that the user is verified using request.auth.token.email_verified == true."
+      // BUT actually this app uses signInWithPopup (Google) so email_verified is true. Let's add it.
+      return request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-. ]+$'); 
+    }
+
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isValidHistoryItem(data) {
+      return data.keys().hasAll(['date', 'type', 'content', 'title']) &&
+             data.keys().size() == 4 &&
+             data.date is string && data.date.size() <= 100 &&
+             data.type is string && data.type.size() <= 50 &&
+             data.content is string && data.content.size() <= 500000 &&
+             data.title is string && data.title.size() <= 200;
+    }
+
+    function isValidTrainingFile(data) {
+      return data.keys().hasAll(['name', 'type', 'base64Data', 'size']) &&
+             data.keys().size() == 4 &&
+             data.name is string && data.name.size() <= 300 &&
+             data.type is string && data.type.size() <= 100 &&
+             data.base64Data is string && data.base64Data.size() <= 5000000 &&
+             data.size is number && data.size >= 0;
+    }
+
+    match /users/{userId} {
+      // we don't need a specific doc here currently, but if we do, block creation/read unless owner
+      allow get: if isSignedIn() && isVerified() && isOwner(userId);
+      
+      match /history/{historyId} {
+        allow get: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(historyId);
+        allow list: if isSignedIn() && isVerified() && isOwner(userId);
+        allow create, update: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(historyId) && isValidHistoryItem(incoming());
+        allow delete: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(historyId);
+      }
+
+      match /trainingFiles/{fileId} {
+        allow get: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(fileId);
+        allow list: if isSignedIn() && isVerified() && isOwner(userId);
+        allow create, update: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(fileId) && isValidTrainingFile(incoming());
+        allow delete: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(fileId);
+      }
+    }
+  }
+}

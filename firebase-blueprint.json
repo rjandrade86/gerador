@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "historyItem": {
+      "title": "History Item",
+      "description": "Represents a generated document or history entry.",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string",
+          "description": "Date of generation"
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of history item (e.g., 'Relatório', 'Análise')",
+          "enum": ["Relatório", "Análise", "Transcrição", "Formalização", "Concatenação", "report", "analyzer", "formalizer", "concatenator", "transcriber"]
+        },
+        "content": {
+          "type": "string",
+          "description": "The generated content"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the item"
+        }
+      },
+      "required": ["date", "type", "content", "title"]
+    },
+    "trainingFile": {
+      "title": "Training File",
+      "description": "A custom file provided by the user for model training.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "base64Data": {
+          "type": "string",
+          "description": "Base64 encoded file data"
+        },
+        "size": {
+          "type": "number",
+          "description": "File size in bytes"
+        }
+      },
+      "required": ["name", "type", "base64Data", "size"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/history/{historyId}": {
+      "schema": {
+        "$ref": "#/entities/historyItem"
+      },
+      "description": "User's generated document history"
+    },
+    "/users/{userId}/trainingFiles/{fileId}": {
+      "schema": {
+        "$ref": "#/entities/trainingFile"
+      },
+      "description": "User's model training files"
+    }
+  }
+}

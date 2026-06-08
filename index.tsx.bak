@@ -10,46 +10,7 @@ import { h, JSX as PreactJSX } from 'preact';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, PageOrientation } from 'docx';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, getDoc } from 'firebase/firestore';
-import firebaseConfig from './firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: any;
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 
 interface HistoryItem {
     id: string;
@@ -179,34 +140,6 @@ const App = () => {
     const [showNotice, setShowNotice] = useState(true);
     const [confirmClear, setConfirmClear] = useState(false);
 
-    // Auth state
-    const [user, setUser] = useState<User | null>(null);
-
-    useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-        });
-        return () => unsubscribe();
-    }, []);
-
-    const handleLogin = async () => {
-        try {
-            const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
-        } catch (error) {
-            console.error("Login Error:", error);
-            setError("Erro ao fazer login. Tente novamente.");
-        }
-    };
-
-    const handleLogout = async () => {
-        try {
-            await signOut(auth);
-        } catch (error) {
-            console.error("Logout Error:", error);
-        }
-    };
-
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -224,6 +157,7 @@ const App = () => {
     const acceptedUploadTypesForInput = [
         "application/pdf",
         "text/plain",
+        "application/msword", 
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.oasis.opendocument.text" 
     ];
@@ -240,71 +174,38 @@ const App = () => {
     }, []);
 
     useEffect(() => {
-        if (user) {
-            const fetchUserData = async () => {
-                try {
-                    const historySnapshot = await getDocs(collection(db, `users/${user.uid}/history`));
-                    const loadedHistory: HistoryItem[] = [];
-                    historySnapshot.forEach((docSnap) => {
-                        loadedHistory.push({ ...(docSnap.data() as Omit<HistoryItem, 'id'>), id: docSnap.id });
-                    });
-                    setHistory(loadedHistory.sort((a,b) => b.id.localeCompare(a.id)));
-
-                    const filesSnapshot = await getDocs(collection(db, `users/${user.uid}/trainingFiles`));
-                    const loadedFiles: TrainingFile[] = [];
-                    filesSnapshot.forEach((docSnap) => {
-                        loadedFiles.push(docSnap.data() as TrainingFile); 
-                    });
-                    if (loadedFiles.length > 0) {
-                        setTrainingFiles(loadedFiles);
-                    } else {
-                        setTrainingFiles(getDefaultTrainingData());
-                    }
-                } catch (err) {
-                    handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
-                }
-            };
-            fetchUserData();
-        } else {
-            // Load from local storage
-            try {
-                const storedFilesJSON = localStorage.getItem(LOCAL_STORAGE_TRAINING_FILES_KEY);
-                if (storedFilesJSON) {
-                    const storedFiles = JSON.parse(storedFilesJSON);
-                    if (storedFiles.length > 0) {
-                        setTrainingFiles(storedFiles);
-                    } else {
-                        setTrainingFiles(getDefaultTrainingData());
-                    }
-                } else {
-                    setTrainingFiles(getDefaultTrainingData());
-                }
-                const storedHistoryJSON = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
-                if (storedHistoryJSON) {
-                    setHistory(JSON.parse(storedHistoryJSON));
-                }
-            } catch (e) {
-                console.error("Error loading local data:", e);
-                setTrainingFiles(getDefaultTrainingData());
-            }
-        }
-    }, [user]);
-
-    useEffect(() => {
-        if (!user) {
-            try {
-                const currentTotalSize = trainingFiles.reduce((acc, file) => acc + file.size, 0);
-                if (currentTotalSize > MAX_LOCAL_STORAGE_SIZE) {
-                    setLocalStorageError(`Não foi possível salvar os arquivos de treinamento. Espaço local excedido (${(currentTotalSize / (1024*1024)).toFixed(2)}MB de ~4MB).`);
+        try {
+            const storedFilesJSON = localStorage.getItem(LOCAL_STORAGE_TRAINING_FILES_KEY);
+            if (storedFilesJSON) {
+                const storedFiles = JSON.parse(storedFilesJSON);
+                if (storedFiles.length > 0) {
+                    setTrainingFiles(storedFiles);
                     return;
                 }
-                localStorage.setItem(LOCAL_STORAGE_TRAINING_FILES_KEY, JSON.stringify(trainingFiles));
-                setLocalStorageError('');
-            } catch (e) {
-                console.error("Error saving training files to localStorage:", e);
             }
+            setTrainingFiles(getDefaultTrainingData());
+        } catch (e) {
+            console.error("Error loading training files from localStorage:", e);
+            setLocalStorageError("Erro ao carregar arquivos de treinamento salvos. Carregando modelos padrão.");
+            setTrainingFiles(getDefaultTrainingData());
         }
-    }, [trainingFiles, user]);
+    }, []); 
+
+
+    useEffect(() => {
+        try {
+            const currentTotalSize = trainingFiles.reduce((acc, file) => acc + file.size, 0);
+            if (currentTotalSize > MAX_LOCAL_STORAGE_SIZE) {
+                setLocalStorageError(`Não foi possível salvar os arquivos de treinamento. Espaço de armazenamento local excedido (${(currentTotalSize / (1024*1024)).toFixed(2)}MB de ~4MB). Remova arquivos ou limpe o treinamento.`);
+                return;
+            }
+            localStorage.setItem(LOCAL_STORAGE_TRAINING_FILES_KEY, JSON.stringify(trainingFiles));
+            setLocalStorageError('');
+        } catch (e) {
+            console.error("Error saving training files to localStorage:", e);
+            setLocalStorageError("Erro ao salvar arquivos de treinamento. O armazenamento local pode estar cheio ou indisponível.");
+        }
+    }, [trainingFiles]);
 
     useEffect(() => {
         if (!reportOptions.comIndiciamento) {
@@ -313,16 +214,25 @@ const App = () => {
     }, [reportOptions.comIndiciamento]);
 
     useEffect(() => {
-        if (!user) {
-            try {
-                localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(history));
-            } catch (e) {
-                console.error("Error saving history to localStorage:", e);
+        try {
+            const storedHistoryJSON = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
+            if (storedHistoryJSON) {
+                setHistory(JSON.parse(storedHistoryJSON));
             }
+        } catch (e) {
+            console.error("Error loading history from localStorage:", e);
         }
-    }, [history, user]);
+    }, []);
 
-    const addToHistory = useCallback(async (type: string, content: string, title: string) => {
+    useEffect(() => {
+        try {
+            localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(history));
+        } catch (e) {
+            console.error("Error saving history to localStorage:", e);
+        }
+    }, [history]);
+
+    const addToHistory = useCallback((type: string, content: string, title: string) => {
         const newItem: HistoryItem = {
             id: Date.now().toString(),
             date: new Date().toLocaleString('pt-BR'),
@@ -330,93 +240,22 @@ const App = () => {
             content,
             title: title || 'Sem título'
         };
-        
-        setHistory(prev => {
-            const nextHistory = [newItem, ...prev].slice(0, 50);
-            return nextHistory;
-        });
+        setHistory(prev => [newItem, ...prev].slice(0, 50)); // Keep last 50 items
+    }, []);
 
-        if (user) {
-            try {
-                await setDoc(doc(db, `users/${user.uid}/history`, newItem.id), {
-                    date: newItem.date,
-                    type: newItem.type,
-                    content: newItem.content,
-                    title: newItem.title
-                });
-            } catch (error) {
-                handleFirestoreError(error, OperationType.CREATE, `history/${newItem.id}`);
-            }
-        }
-    }, [user]);
-
-    const removeFromHistory = useCallback(async (id: string) => {
+    const removeFromHistory = useCallback((id: string) => {
         setHistory(prev => prev.filter(item => item.id !== id));
-        if (user) {
-            try {
-                await deleteDoc(doc(db, `users/${user.uid}/history`, id));
-            } catch (error) {
-                handleFirestoreError(error, OperationType.DELETE, `history/${id}`);
-            }
-        }
-    }, [user]);
+    }, []);
 
-    const clearHistory = useCallback(async () => {
+    const clearHistory = useCallback(() => {
         if (confirmClear) {
-            if (user) {
-                try {
-                    // Delete each doc individually for simplicity
-                    for (const item of history) {
-                        await deleteDoc(doc(db, `users/${user.uid}/history`, item.id));
-                    }
-                } catch (error) {
-                    handleFirestoreError(error, OperationType.DELETE, 'history');
-                }
-            }
             setHistory([]);
             setConfirmClear(false);
         } else {
             setConfirmClear(true);
-            setTimeout(() => setConfirmClear(false), 3000); 
+            setTimeout(() => setConfirmClear(false), 3000); // Reset after 3 seconds
         }
-    }, [confirmClear, user, history]);
-
-    const handleExportHistory = useCallback(() => {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(history));
-        const downloadAnchorNode = document.createElement('a');
-        downloadAnchorNode.setAttribute("href",     dataStr);
-        downloadAnchorNode.setAttribute("download", "historico_gerador_relatorios.json");
-        document.body.appendChild(downloadAnchorNode); // required for firefox
-        downloadAnchorNode.click();
-        downloadAnchorNode.remove();
-        setCopySuccess('Histórico exportado com sucesso!');
-        setTimeout(() => setCopySuccess(''), 3000);
-    }, [history]);
-
-    const handleImportHistory = useCallback((event: Event) => {
-        const target = event.target as HTMLInputElement;
-        const file = target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const importedHistory = JSON.parse(e.target?.result as string);
-                if (Array.isArray(importedHistory)) {
-                    setHistory(importedHistory);
-                    setCopySuccess('Histórico importado com sucesso!');
-                    setTimeout(() => setCopySuccess(''), 3000);
-                } else {
-                    setError('Formato de arquivo inválido para importação.');
-                    setTimeout(() => setError(''), 3000);
-                }
-            } catch (err) {
-                setError('Erro ao ler o arquivo de importação.');
-                setTimeout(() => setError(''), 3000);
-            }
-        };
-        reader.readAsText(file);
-    }, []);
+    }, [confirmClear]);
 
     const toggleTheme = useCallback(() => {
         const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -431,9 +270,6 @@ const App = () => {
     };
 
     const fileToGenerativePart = async (file: File) => {
-        if (!acceptedMediaTypes.includes(file.type) && file.type !== "application/pdf") {
-            throw new Error(`O arquivo '${file.name}' tem formato não suportado. Aceitos: PDF ou mídias.`);
-        }
         const base64String = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => {
@@ -456,10 +292,6 @@ const App = () => {
 
     const fileToGenerativePartV2 = async (file: File): Promise<{ inlineData: { data: string; mimeType: string; } } | null> => {
         try {
-            if (!acceptedUploadTypesForInput.includes(file.type)) {
-                throw new Error(`O arquivo '${file.name}' tem formato não suportado. Aceitos: PDF, TXT, DOCX, ODT.`);
-            }
-            
             let base64Data: string;
             let mimeType = file.type;
 
@@ -991,7 +823,7 @@ const App = () => {
 
         for (const file of newFiles) {
             if (!acceptedUploadTypesForInput.includes(file.type)) {
-                setTrainingFileWarning(prev => prev + `Arquivo '${file.name}' (${file.type}) ignorado: tipo não aceito para upload. Aceitos: PDF, TXT, DOCX, ODT.\n`);
+                setTrainingFileWarning(prev => prev + `Arquivo '${file.name}' (${file.type}) ignorado: tipo não aceito para upload. Aceitos: PDF, TXT, DOC, DOCX, ODT.\n`);
                 continue;
             }
             if (newTrainingFiles.some(tf => tf.name === file.name)) {
@@ -1066,42 +898,15 @@ const App = () => {
 
         if (filesAddedCount > 0) {
             setTrainingFiles(newTrainingFiles);
-            if (user) {
-                // upload new files to firestore
-                for (const tf of newTrainingFiles) {
-                    if (trainingFiles.find(existing => existing.name === tf.name)) continue; // wait, newTrainingFiles already has prev trainingFiles context. We only need the truly NEW ones.
-                    try {
-                        await setDoc(doc(db, `users/${user.uid}/trainingFiles`, tf.name), tf);
-                    } catch (error) {
-                        handleFirestoreError(error, OperationType.CREATE, `trainingFiles/${tf.name}`);
-                    }
-                }
-            }
         }
         target.value = '';
     };
 
-    const removeTrainingFile = async (fileNameToRemove: string) => {
+    const removeTrainingFile = (fileNameToRemove: string) => {
         setTrainingFiles(prevFiles => prevFiles.filter(file => file.name !== fileNameToRemove));
-        if (user) {
-            try {
-                await deleteDoc(doc(db, `users/${user.uid}/trainingFiles`, fileNameToRemove));
-            } catch (error) {
-                handleFirestoreError(error, OperationType.DELETE, `trainingFiles/${fileNameToRemove}`);
-            }
-        }
     };
 
-    const clearAllTrainingData = async () => {
-        if (user) {
-            try {
-                for (const tf of trainingFiles) {
-                    await deleteDoc(doc(db, `users/${user.uid}/trainingFiles`, tf.name));
-                }
-            } catch (error) {
-                handleFirestoreError(error, OperationType.DELETE, `trainingFiles`);
-            }
-        }
+    const clearAllTrainingData = () => {
         setTrainingFiles([]);
         setTrainingFileWarning('Todos os dados de treinamento foram removidos.');
         setTimeout(() => setTrainingFileWarning(''), 3000);
@@ -1992,22 +1797,11 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             h('h2', { class: 'tab-content-title' }, 'Histórico de Documentos'),
             history.length === 0 ? h('p', null, 'Nenhum documento no histórico.') :
             h('div', null,
-                h('div', { style: { display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' } },
-                    h('button', { 
-                        onClick: clearHistory, 
-                        class: confirmClear ? 'danger-button pulse' : 'danger-button', 
-                    }, confirmClear ? 'Clique novamente para confirmar' : 'Limpar Todo o Histórico'),
-                    h('button', { 
-                        onClick: handleExportHistory, 
-                        class: 'secondary-button', 
-                    }, 'Exportar Config/Histórico JSON'),
-                    h('div', { style: { display: 'inline-flex', alignItems: 'center' } },
-                        h('label', { class: 'secondary-button', style: { cursor: 'pointer', margin: 0 } },
-                            'Importar Histórico',
-                            h('input', { type: 'file', accept: '.json', style: { display: 'none' }, onChange: handleImportHistory })
-                        )
-                    )
-                ),
+                h('button', { 
+                    onClick: clearHistory, 
+                    class: confirmClear ? 'danger-button pulse' : 'danger-button', 
+                    style: { marginBottom: '20px' } 
+                }, confirmClear ? 'Clique novamente para confirmar' : 'Limpar Todo o Histórico'),
                 h('div', { class: 'history-list' },
                     history.map(item => h('div', { key: item.id, class: 'history-item card', style: { marginBottom: '15px', padding: '15px' } },
                         h('div', { class: 'history-item-header', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
@@ -2057,24 +1851,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
     return (
         h('div', null,
             h('div', { class: 'app-header' },
-                h('div', { style: { display: 'flex', alignItems: 'center', gap: '20px', paddingRight: '50px', flexWrap: 'wrap' } }, 
-                    h('h1', { style: { margin: '0' } }, 'Gerador de Documentos Policiais'),
-                    user ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9em' } },
-                        h('span', null, `👤 ${user.email}`),
-                        h('button', { onClick: handleLogout, class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.9em', margin: 0 } }, 'Sair')
-                    ) : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' } },
-                        h('button', { onClick: handleLogin, class: 'action-button', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 16px', width: 'auto', fontSize: '0.9em', margin: 0, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', fontWeight: 'bold', borderRadius: '8px' } }, 
-                            h('svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 48 48", width: "18px", height: "18px", style: { marginRight: '8px' } },
-                                h('path', { fill: "#FFC107", d: "M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z" }),
-                                h('path', { fill: "#FF3D00", d: "M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z" }),
-                                h('path', { fill: "#4CAF50", d: "M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z" }),
-                                h('path', { fill: "#1976D2", d: "M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z" })
-                            ),
-                            'Fazer Login com Google'
-                        ),
-                        h('span', { style: { fontSize: '0.7em', color: 'var(--text-secondary)' } }, '* Histórico e modelos salvos na sua conta')
-                    )
-                ),
+                h('h1', null, 'Gerador de Documentos Policiais'),
                 h('button', {
                     onClick: toggleTheme,
                     class: 'theme-toggle',
