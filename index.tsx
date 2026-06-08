@@ -109,10 +109,20 @@ function getDefaultTrainingData(): TrainingFile[] {
 const App = () => {
     // Main state
     const [activeTab, setActiveTab] = useState<'report' | 'training' | 'analyzer' | 'concatenator' | 'formalizer' | 'transcriber' | 'history'>('report');
+    const [selectedModel, setSelectedModel] = useState<'gemini-3.5-flash' | 'gemini-3.1-pro-preview'>(() => {
+        const stored = localStorage.getItem('selectedModel');
+        return (stored === 'gemini-3.1-pro-preview' ? 'gemini-3.1-pro-preview' : 'gemini-3.5-flash');
+    });
     const [error, setError] = useState('');
     const [copySuccess, setCopySuccess] = useState('');
     const [theme, setTheme] = useState('light');
     const [history, setHistory] = useState<HistoryItem[]>([]);
+
+    const handleModelChange = useCallback((e: Event) => {
+        const value = (e.target as HTMLSelectElement).value as 'gemini-3.5-flash' | 'gemini-3.1-pro-preview';
+        setSelectedModel(value);
+        localStorage.setItem('selectedModel', value);
+    }, []);
     
     // Report Generator state
     const [inqueritoFiles, setInqueritoFiles] = useState<File[]>([]);
@@ -208,7 +218,14 @@ const App = () => {
     };
 
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({
+        apiKey: process.env.API_KEY,
+        httpOptions: {
+            headers: {
+                'User-Agent': 'aistudio-build',
+            }
+        }
+    });
 
     const MASTER_PROMPT = `### Papel, Missão e Formato (Prioridade Máxima)
 1.  **Persona:** Atue como um Delegado de Polícia com vasta experiência e profundo conhecimento jurídico e investigativo.
@@ -738,7 +755,7 @@ const App = () => {
             }
 
             const geminiInternalResponse: GeminiGenerateContentResponse = await ai.models.generateContent({ 
-                model: 'gemini-3.1-pro-preview',
+                model: selectedModel,
                 contents: { parts: parts }
             });
 
@@ -778,7 +795,7 @@ const App = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [inqueritoFiles, userConsiderations, ai, trainingFiles, reportOptions, indiciamentoDetails, MASTER_PROMPT]);
+    }, [inqueritoFiles, userConsiderations, ai, trainingFiles, reportOptions, indiciamentoDetails, MASTER_PROMPT, selectedModel]);
 
     const handleCopyReport = () => {
         if (generatedReport) {
@@ -1148,7 +1165,7 @@ const App = () => {
             }
 
             const response = await ai.models.generateContent({
-                model: 'gemini-3.1-pro-preview',
+                model: selectedModel,
                 contents: { parts: [{ text: prompt }, ...resolvedFileParts] }
             });
 
@@ -1166,7 +1183,7 @@ const App = () => {
         } finally {
             setIsAnalyzing(false);
         }
-    }, [analyzerFiles, ai, analyzerConsiderations, MASTER_PROMPT]);
+    }, [analyzerFiles, ai, analyzerConsiderations, MASTER_PROMPT, selectedModel]);
 
     const handleCopySummary = () => {
         if (analyzerSummary) {
@@ -1254,7 +1271,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
             });
 
             const response = await ai.models.generateContent({
-                model: 'gemini-3.1-pro-preview',
+                model: selectedModel,
                 contents: { parts: parts }
             });
 
@@ -1272,7 +1289,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
         } finally {
             setIsConcatenating(false);
         }
-    }, [concatenatorMainFile, concatenatorAdditionalFiles, ai, concatenatorConsiderations, MASTER_PROMPT]);
+    }, [concatenatorMainFile, concatenatorAdditionalFiles, ai, concatenatorConsiderations, MASTER_PROMPT, selectedModel]);
 
     const handleCopyConcatenated = () => {
         if (concatenatedReport) {
@@ -1347,7 +1364,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
             prompt += `\n\n--- Início do Texto do Usuário para ser Formalizado ---\n${formalizerInputText}\n--- Fim do Texto do Usuário ---`;
 
             const response = await ai.models.generateContent({
-                model: 'gemini-3.1-pro-preview',
+                model: selectedModel,
                 contents: { parts: [{ text: prompt }] }
             });
 
@@ -1365,7 +1382,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
         } finally {
             setIsFormalizing(false);
         }
-    }, [formalizerInputText, formalizerMode, ai, MASTER_PROMPT, formalizerShowObservations, formalizerObservations]);
+    }, [formalizerInputText, formalizerMode, ai, MASTER_PROMPT, formalizerShowObservations, formalizerObservations, selectedModel]);
 
     const handleCopyFormalized = () => {
         if (formalizerOutputText) {
@@ -1476,7 +1493,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             });
             
             const response = await ai.models.generateContent({
-                model: 'gemini-3.1-pro-preview',
+                model: selectedModel,
                 contents: { parts: contents }
             });
 
@@ -1494,7 +1511,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
         } finally {
             setIsTranscribing(false);
         }
-    }, [ai, transcriberFiles, transcriberOptions, transcriberConsiderations]);
+    }, [ai, transcriberFiles, transcriberOptions, transcriberConsiderations, selectedModel]);
 
     const handleCopyTranscription = () => {
         if (transcribedText) {
@@ -2059,6 +2076,27 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             h('div', { class: 'app-header' },
                 h('div', { style: { display: 'flex', alignItems: 'center', gap: '20px', paddingRight: '50px', flexWrap: 'wrap' } }, 
                     h('h1', { style: { margin: '0' } }, 'Gerador de Documentos Policiais'),
+                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85em', border: '1px solid var(--border-color)', padding: '4px 10px', borderRadius: '8px', backgroundColor: 'var(--bg-primary)' } },
+                        h('span', { style: { fontWeight: '600', color: 'var(--text-secondary)' } }, 'Modelo IA:'),
+                        h('select', { 
+                            value: selectedModel, 
+                            onChange: handleModelChange, 
+                            style: { 
+                                padding: '2px 6px', 
+                                borderRadius: '6px', 
+                                border: '1px solid var(--input-border)', 
+                                backgroundColor: 'var(--input-bg)', 
+                                color: 'var(--text-primary)', 
+                                fontSize: '1em',
+                                outline: 'none',
+                                cursor: 'pointer',
+                                fontWeight: '500'
+                            } 
+                        },
+                            h('option', { value: 'gemini-3.5-flash' }, '⚡ Gemini 3.5 Flash (Cota Alta)'),
+                            h('option', { value: 'gemini-3.1-pro-preview' }, '🧠 Gemini 3.1 Pro (Limite Estrito)')
+                        )
+                    ),
                     user ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9em' } },
                         h('span', null, `👤 ${user.email}`),
                         h('button', { onClick: handleLogout, class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.9em', margin: 0 } }, 'Sair')
