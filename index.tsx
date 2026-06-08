@@ -13,7 +13,8 @@ import JSZip from 'jszip';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, getDoc } from 'firebase/firestore';
-import firebaseConfigImport from './firebase-applet-config.json';
+const configs = import.meta.glob('./firebase-applet-config.json', { eager: true });
+const firebaseConfigImport = (configs['./firebase-applet-config.json'] as any)?.default || {};
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY || firebaseConfigImport.apiKey,
