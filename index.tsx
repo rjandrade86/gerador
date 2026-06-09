@@ -798,7 +798,7 @@ const App = () => {
             let errorMessage = err instanceof Error ? err.message : String(err);
 
             if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("quota")) {
-                errorMessage = "Cota da API excedida. O limite de uso gratuito ou do seu plano foi atingido. Por favor, aguarde alguns instantes e tente novamente, ou verifique os limites da sua chave de API no Google AI Studio.";
+                errorMessage = `Cota da API excedida (ou Limite de Tokens atingido). Detalhe: ${errorMessage}`;
             }
 
             setError(`Erro ao gerar relatório: ${errorMessage}. Verifique o console do navegador para detalhes técnicos completos.`);
@@ -1187,7 +1187,7 @@ const App = () => {
             let errorMessage = err instanceof Error ? err.message : String(err);
 
             if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("quota")) {
-                errorMessage = "Cota da API excedida. O limite de uso gratuito ou do seu plano foi atingido. Por favor, aguarde alguns instantes e tente novamente.";
+                errorMessage = `Cota da API excedida. Detalhe original: ${errorMessage}`;
             }
 
             setAnalyzerError(`Erro ao analisar documento: ${errorMessage}`);
@@ -1293,7 +1293,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
             let errorMessage = err instanceof Error ? err.message : String(err);
 
             if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("quota")) {
-                errorMessage = "Cota da API excedida. O limite de uso gratuito ou do seu plano foi atingido. Por favor, aguarde alguns instantes e tente novamente.";
+                errorMessage = `Cota da API excedida. Detalhe original: ${errorMessage}`;
             }
 
             setConcatenatorError(`Erro ao concatenar documentos: ${errorMessage}`);
@@ -1386,7 +1386,7 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
             let errorMessage = err instanceof Error ? err.message : String(err);
 
             if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("quota")) {
-                errorMessage = "Cota da API excedida. O limite de uso gratuito ou do seu plano foi atingido. Por favor, aguarde alguns instantes e tente novamente.";
+                errorMessage = `Cota da API excedida. Detalhe original: ${errorMessage}`;
             }
 
             setFormalizerError(`Erro ao formalizar conteúdo: ${errorMessage}`);
@@ -1515,7 +1515,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             let errorMessage = err instanceof Error ? err.message : String(err);
 
             if (errorMessage.includes("429") || errorMessage.includes("RESOURCE_EXHAUSTED") || errorMessage.includes("quota")) {
-                errorMessage = "Cota da API excedida. O limite de uso gratuito ou do seu plano foi atingido. Por favor, aguarde alguns instantes e tente novamente.";
+                errorMessage = `Cota da API excedida. Detalhe original: ${errorMessage}`;
             }
 
             setTranscriberError(`Erro ao transcrever mídia: ${errorMessage}`);
