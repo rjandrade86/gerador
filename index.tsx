@@ -13,7 +13,7 @@ import JSZip from 'jszip';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, getDoc } from 'firebase/firestore';
-const configs = import.meta.glob('./firebase-applet-config.json', { eager: true });
+const configs = (import.meta as any).glob('./firebase-applet-config.json', { eager: true });
 const firebaseConfigImport = (configs['./firebase-applet-config.json'] as any)?.default || {};
 
 const firebaseConfig = {
@@ -26,9 +26,88 @@ const firebaseConfig = {
   firestoreDatabaseId: process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigImport.firestoreDatabaseId
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
-export const auth = getAuth(app);
+let appInstance: any = null;
+let dbInstance: any = null;
+let authInstance: any = null;
+
+try {
+  if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+    appInstance = initializeApp(firebaseConfig);
+    dbInstance = getFirestore(appInstance, firebaseConfig.firestoreDatabaseId || undefined);
+    authInstance = getAuth(appInstance);
+  } else {
+    console.log("Firebase is not fully configured (apiKey or projectId is missing). Sync is disabled.");
+  }
+} catch (error) {
+  console.error("Error during Firebase initialization:", error);
+}
+
+export const app = appInstance;
+export const db = dbInstance;
+export const auth = authInstance;
+
+const loadPdfJs = async () => {
+    if ((window as any).pdfjsLib) return (window as any).pdfjsLib;
+    return new Promise<any>((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = () => {
+            const pdfjs = (window as any).pdfjsLib;
+            pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            resolve(pdfjs);
+        };
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+};
+
+const convertGeminiPartsToOpenAIPrompt = async (parts: any[]): Promise<string> => {
+    let prompt = '';
+    for (const part of parts) {
+        if (typeof part === 'string') {
+            prompt += part;
+        } else if (part.text) {
+            prompt += part.text;
+        } else if (part.inlineData) {
+            const { data, mimeType } = part.inlineData;
+            if (mimeType === 'text/plain') {
+                try {
+                    prompt += decodeURIComponent(escape(atob(data)));
+                } catch (e) {
+                    try {
+                        prompt += atob(data);
+                    } catch {
+                        prompt += data;
+                    }
+                }
+            } else if (mimeType === 'application/pdf') {
+                try {
+                    const binaryString = atob(data);
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    const pdfjsLib = await loadPdfJs();
+                    const loadingTask = pdfjsLib.getDocument({ data: bytes });
+                    const pdf = await loadingTask.promise;
+                    let pdfText = '';
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        pdfText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
+                    }
+                    prompt += pdfText;
+                } catch (e) {
+                    console.error("Erro ao extrair texto do PDF base64:", e);
+                    prompt += `\n[Erro ao extrair texto do arquivo PDF]\n`;
+                }
+            } else {
+                prompt += `\n[Arquivo de mídia/binário: ${mimeType}]\n`;
+            }
+        }
+    }
+    return prompt;
+};
 
 enum OperationType {
   CREATE = 'create',
@@ -50,10 +129,10 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
+      isAnonymous: auth?.currentUser?.isAnonymous,
     },
     operationType,
     path
@@ -120,17 +199,22 @@ function getDefaultTrainingData(): TrainingFile[] {
 const App = () => {
     // Main state
     const [activeTab, setActiveTab] = useState<'report' | 'training' | 'analyzer' | 'concatenator' | 'formalizer' | 'transcriber' | 'history'>('report');
-    const [selectedModel, setSelectedModel] = useState<'gemini-3.5-flash' | 'gemini-3.1-pro-preview'>(() => {
-        const stored = localStorage.getItem('selectedModel');
-        return (stored === 'gemini-3.1-pro-preview' ? 'gemini-3.1-pro-preview' : 'gemini-3.5-flash');
+    const [selectedModel, setSelectedModel] = useState<'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gpt-4o' | 'gpt-4o-mini'>(() => {
+        const stored = localStorage.getItem('selectedModel') as any;
+        return (['gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gpt-4o', 'gpt-4o-mini'].includes(stored) ? stored : 'gemini-3.5-flash');
     });
+    const [openaiApiKey, setOpenaiApiKey] = useState(() => {
+        const stored = localStorage.getItem('openai_api_key');
+        return stored || process.env.OPENAI_API_KEY || '';
+    });
+    const [showOpenAiConfig, setShowOpenAiConfig] = useState(false);
     const [error, setError] = useState('');
     const [copySuccess, setCopySuccess] = useState('');
     const [theme, setTheme] = useState('light');
     const [history, setHistory] = useState<HistoryItem[]>([]);
 
     const handleModelChange = useCallback((e: Event) => {
-        const value = (e.target as HTMLSelectElement).value as 'gemini-3.5-flash' | 'gemini-3.1-pro-preview';
+        const value = (e.target as HTMLSelectElement).value as any;
         setSelectedModel(value);
         localStorage.setItem('selectedModel', value);
     }, []);
@@ -204,6 +288,10 @@ const App = () => {
     const [user, setUser] = useState<User | null>(null);
 
     useEffect(() => {
+        if (!auth) {
+            setUser(null);
+            return;
+        }
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
         });
@@ -211,6 +299,10 @@ const App = () => {
     }, []);
 
     const handleLogin = async () => {
+        if (!auth) {
+            setError("Sincronização na nuvem indisponível (Firebase não configurado). Seus dados estão sendo guardados localmente com segurança.");
+            return;
+        }
         try {
             const provider = new GoogleAuthProvider();
             await signInWithPopup(auth, provider);
@@ -221,11 +313,68 @@ const App = () => {
     };
 
     const handleLogout = async () => {
+        if (!auth) return;
         try {
             await signOut(auth);
         } catch (error) {
             console.error("Logout Error:", error);
         }
+    };
+
+    const renderErrorWithAction = (
+        currentError: string, 
+        clearErrorFn: () => void
+    ) => {
+        if (!currentError) return null;
+        
+        const isOpenAiQuotaError = currentError.toLowerCase().includes('openai') && 
+            (currentError.toLowerCase().includes('quota') || currentError.toLowerCase().includes('billing') || currentError.toLowerCase().includes('limite') || currentError.toLowerCase().includes('excedido'));
+
+        return h('div', { 
+            class: 'error-message', 
+            role: 'alert', 
+            style: { 
+                whiteSpace: 'pre-line',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fee2e2',
+                color: '#991b1b',
+                padding: '16px',
+                borderRadius: '12px',
+                margin: '15px 0'
+            } 
+        },
+            h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: '8px' } },
+                h('span', { style: { fontSize: '1.2em' } }, '⚠️'),
+                h('span', { style: { flex: 1, fontWeight: '500' } }, currentError)
+            ),
+            isOpenAiQuotaError && h('button', {
+                onClick: () => {
+                    setSelectedModel('gemini-3.5-flash');
+                    localStorage.setItem('selectedModel', 'gemini-3.5-flash');
+                    clearErrorFn();
+                },
+                style: {
+                    alignSelf: 'flex-start',
+                    backgroundColor: '#dc2626',
+                    color: 'white',
+                    border: 'none',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    fontSize: '0.92em',
+                    transition: 'background-color 0.2s',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                    marginTop: '4px'
+                }
+            }, '✨ Alterar para Gemini 3.5 Flash (Alta Cota)')
+        );
     };
 
 
@@ -237,6 +386,95 @@ const App = () => {
             }
         }
     });
+
+    const generateContentWithOpenAI = useCallback(async (modelName: string, parts: any[]): Promise<string> => {
+        if (!openaiApiKey) {
+            throw new Error("Chave de API do OpenAI não configurada. Dica: Altere o modelo de IA no topo da tela para usar o 'Gemini 3.5 Flash' ou 'Gemini 3.1 Pro' (que já estão configurados de fábrica de forma nativa no espaço de trabalho), ou envie uma mensagem ao assistente para inserir sua chave OpenAI.");
+        }
+        
+        const rawPrompt = await convertGeminiPartsToOpenAIPrompt(parts);
+        
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${openaiApiKey}`
+            },
+            body: JSON.stringify({
+                model: modelName,
+                messages: [
+                    { role: 'user', content: rawPrompt }
+                ],
+                temperature: 0.2
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const rawErrorMsg = errorData.error?.message || `Erro da API OpenAI: status ${response.status}`;
+            if (rawErrorMsg.toLowerCase().includes("quota") || rawErrorMsg.toLowerCase().includes("billing") || response.status === 429) {
+                throw new Error(`Limite de cotas excedido na sua chave da OpenAI (Quota Exceeded / Billing Error). Detalhe: ${rawErrorMsg}. Dica: Altere o modelo de IA na seleção superior para 'Gemini 3.5 Flash' ou 'Gemini 3.1 Pro' para continuar gerando relatórios com alta cota de forma nativa.`);
+            }
+            throw new Error(rawErrorMsg);
+        }
+        
+        const data = await response.json();
+        const text = data.choices[0]?.message?.content;
+        if (!text) {
+            throw new Error("A API do OpenAI retornou uma resposta sem conteúdo textual.");
+        }
+        return text;
+    }, [openaiApiKey]);
+
+    const generateContent = useCallback(async (model: string, parts: any[]): Promise<string> => {
+        if (model.startsWith('gpt')) {
+            try {
+                return await generateContentWithOpenAI(model, parts);
+            } catch (err: any) {
+                const isQuotaError = err.message?.toLowerCase().includes("quota") || 
+                                     err.message?.toLowerCase().includes("billing") || 
+                                     err.message?.toLowerCase().includes("limite") ||
+                                     err.message?.toLowerCase().includes("429") ||
+                                     err.message?.toLowerCase().includes("exceeded");
+                if (isQuotaError) {
+                    console.warn("OpenAI Quota Exceeded. Falling back automatically to Gemini 3.5 Flash for a seamless experience...");
+                    // Update state so the UI reflects the current active model
+                    setSelectedModel('gemini-3.5-flash');
+                    localStorage.setItem('selectedModel', 'gemini-3.5-flash');
+                    
+                    // Force a retry using Gemini 3.5 Flash
+                    const geminiInternalResponse: GeminiGenerateContentResponse = await ai.models.generateContent({ 
+                        model: 'gemini-3.5-flash',
+                        contents: { parts: parts }
+                    });
+                    const reportText = geminiInternalResponse.text;
+                    if (!reportText) {
+                        let specificError = "O modelo não retornou conteúdo textual no fallback.";
+                        if (geminiInternalResponse.promptFeedback?.blockReason) {
+                            specificError = `A geração de conteúdo foi bloqueada no fallback. Razão: ${geminiInternalResponse.promptFeedback.blockReason}.`;
+                        }
+                        throw new Error(specificError);
+                    }
+                    return reportText;
+                }
+                throw err;
+            }
+        } else {
+            const geminiInternalResponse: GeminiGenerateContentResponse = await ai.models.generateContent({ 
+                model: model as any,
+                contents: { parts: parts }
+            });
+            const reportText = geminiInternalResponse.text;
+            if (!reportText) {
+                let specificError = "O modelo não retornou conteúdo textual.";
+                if (geminiInternalResponse.promptFeedback?.blockReason) {
+                    specificError = `A geração de conteúdo foi bloqueada. Razão: ${geminiInternalResponse.promptFeedback.blockReason}.`;
+                }
+                throw new Error(specificError);
+            }
+            return reportText;
+        }
+    }, [ai, generateContentWithOpenAI, setSelectedModel]);
 
     const MASTER_PROMPT = `### Papel, Missão e Formato (Prioridade Máxima)
 1.  **Persona:** Atue como um Delegado de Polícia com vasta experiência e profundo conhecimento jurídico e investigativo.
@@ -268,7 +506,7 @@ const App = () => {
     }, []);
 
     useEffect(() => {
-        if (user) {
+        if (user && db) {
             const fetchUserData = async () => {
                 try {
                     const historySnapshot = await getDocs(collection(db, `users/${user.uid}/history`));
@@ -364,7 +602,7 @@ const App = () => {
             return nextHistory;
         });
 
-        if (user) {
+        if (user && db) {
             try {
                 await setDoc(doc(db, `users/${user.uid}/history`, newItem.id), {
                     date: newItem.date,
@@ -380,7 +618,7 @@ const App = () => {
 
     const removeFromHistory = useCallback(async (id: string) => {
         setHistory(prev => prev.filter(item => item.id !== id));
-        if (user) {
+        if (user && db) {
             try {
                 await deleteDoc(doc(db, `users/${user.uid}/history`, id));
             } catch (error) {
@@ -391,7 +629,7 @@ const App = () => {
 
     const clearHistory = useCallback(async () => {
         if (confirmClear) {
-            if (user) {
+            if (user && db) {
                 try {
                     // Delete each doc individually for simplicity
                     for (const item of history) {
@@ -765,31 +1003,14 @@ const App = () => {
                 parts.push({ text: "\n--- Fim dos Conteúdos dos Documentos de Treinamento Processados: ---" });
             }
 
-            const geminiInternalResponse: GeminiGenerateContentResponse = await ai.models.generateContent({ 
-                model: selectedModel,
-                contents: { parts: parts }
-            });
-
-            const reportText = geminiInternalResponse.text; 
+            const reportText = await generateContent(selectedModel, parts);
 
             if (reportText) {
                 setGeneratedReport(reportText);
                 setError(''); 
                 addToHistory('Relatório', reportText, inqueritoFiles.map(f => f.name).join(', '));
             } else {
-                let specificError = "O modelo não retornou conteúdo textual.";
-                if (geminiInternalResponse.promptFeedback?.blockReason) {
-                    specificError = `A geração de conteúdo foi bloqueada. Razão: ${geminiInternalResponse.promptFeedback.blockReason}.`;
-                    if (geminiInternalResponse.promptFeedback.safetyRatings && geminiInternalResponse.promptFeedback.safetyRatings.length > 0) {
-                        specificError += ` Detalhes: ${geminiInternalResponse.promptFeedback.safetyRatings.map(r => `${r.category} (${r.probability})`).join(', ')}.`;
-                    }
-                } else if (geminiInternalResponse.candidates && geminiInternalResponse.candidates.length > 0) {
-                    const firstCandidate = geminiInternalResponse.candidates[0];
-                    if (firstCandidate.finishReason && firstCandidate.finishReason !== FinishReason.STOP && firstCandidate.finishReason !== FinishReason.FINISH_REASON_UNSPECIFIED) {
-                         specificError = `A geração de conteúdo terminou inesperadamente. Razão: ${firstCandidate.finishReason}.`;
-                    }
-                }
-                setError(specificError + " Verifique os arquivos de entrada, as opções selecionadas ou tente simplificar as considerações. Consulte o console do navegador para mais detalhes técnicos se o problema persistir.");
+                setError("O modelo não retornou conteúdo textual. Verifique os arquivos de entrada, as opções selecionadas ou tente simplificar as considerações.");
                 setGeneratedReport('');
             }
 
@@ -1094,7 +1315,7 @@ const App = () => {
 
         if (filesAddedCount > 0) {
             setTrainingFiles(newTrainingFiles);
-            if (user) {
+            if (user && db) {
                 // upload new files to firestore
                 for (const tf of newTrainingFiles) {
                     if (trainingFiles.find(existing => existing.name === tf.name)) continue; // wait, newTrainingFiles already has prev trainingFiles context. We only need the truly NEW ones.
@@ -1111,7 +1332,7 @@ const App = () => {
 
     const removeTrainingFile = async (fileNameToRemove: string) => {
         setTrainingFiles(prevFiles => prevFiles.filter(file => file.name !== fileNameToRemove));
-        if (user) {
+        if (user && db) {
             try {
                 await deleteDoc(doc(db, `users/${user.uid}/trainingFiles`, fileNameToRemove));
             } catch (error) {
@@ -1121,7 +1342,7 @@ const App = () => {
     };
 
     const clearAllTrainingData = async () => {
-        if (user) {
+        if (user && db) {
             try {
                 for (const tf of trainingFiles) {
                     await deleteDoc(doc(db, `users/${user.uid}/trainingFiles`, tf.name));
@@ -1175,13 +1396,10 @@ const App = () => {
                 throw new Error("Nenhum arquivo pôde ser processado. Verifique os formatos (PDF, DOCX, ODT, TXT).");
             }
 
-            const response = await ai.models.generateContent({
-                model: selectedModel,
-                contents: { parts: [{ text: prompt }, ...resolvedFileParts] }
-            });
+            const responseText = await generateContent(selectedModel, [{ text: prompt }, ...resolvedFileParts]);
 
-            setAnalyzerSummary(response.text);
-            addToHistory('Análise', response.text, analyzerFiles.map(f => f.name).join(', '));
+            setAnalyzerSummary(responseText);
+            addToHistory('Análise', responseText, analyzerFiles.map(f => f.name).join(', '));
 
         } catch (err: any) {
             let errorMessage = err instanceof Error ? err.message : String(err);
@@ -1281,13 +1499,10 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
                 parts.push({ text: `\n--- Fim: ${label} ---`});
             });
 
-            const response = await ai.models.generateContent({
-                model: selectedModel,
-                contents: { parts: parts }
-            });
+            const responseText = await generateContent(selectedModel, parts);
 
-            setConcatenatedReport(response.text);
-            addToHistory('Concatenação', response.text, concatenatorMainFile?.name + ' + ' + concatenatorAdditionalFiles.length + ' arquivos');
+            setConcatenatedReport(responseText);
+            addToHistory('Concatenação', responseText, (concatenatorMainFile?.name || 'Relatório') + ' + ' + concatenatorAdditionalFiles.length + ' arquivos');
 
         } catch (err: any) {
             let errorMessage = err instanceof Error ? err.message : String(err);
@@ -1374,13 +1589,10 @@ O objetivo final é o 'Relatório Principal', completo, com acréscimos pontuais
 
             prompt += `\n\n--- Início do Texto do Usuário para ser Formalizado ---\n${formalizerInputText}\n--- Fim do Texto do Usuário ---`;
 
-            const response = await ai.models.generateContent({
-                model: selectedModel,
-                contents: { parts: [{ text: prompt }] }
-            });
+            const responseText = await generateContent(selectedModel, [{ text: prompt }]);
 
-            setFormalizerOutputText(response.text);
-            addToHistory('Formalização', response.text, formalizerInputText.substring(0, 50) + '...');
+            setFormalizerOutputText(responseText);
+            addToHistory('Formalização', responseText, formalizerInputText.substring(0, 50) + '...');
 
         } catch (err: any) {
             let errorMessage = err instanceof Error ? err.message : String(err);
@@ -1463,7 +1675,7 @@ Você receberá um ou mais arquivos de mídia, cada um delimitado por marcadores
     *   Siga ESTREITAMENTE as opções ativadas pelo usuário e suas considerações.
     *   **Opção "Inserir o tempo":** Se ATIVA, comece a linha com o timestamp (\`HH:MM:SS\`).
     *   **IDENTIFICAÇÃO DE INTERLOCUTORES (REGRA DE OURO):**
-        - Se a opção "Identificar o interlocutor" estiver ATIVA, você **DEVE** identificar quem está falando.
+        - Se a option "Identificar o interlocutor" estiver ATIVA, você **DEVE** identificar quem está falando.
         - Se o usuário forneceu nomes nas "Considerações do Usuário" (ex: "Roberto e Litiane"), você **É OBRIGADO** a usar esses nomes para identificar as falas. 
         - **NUNCA** omita nomes fornecidos pelo usuário sob pretexto de regras de privacidade ou formato de arquivo. As considerações do usuário são ordens superiores a qualquer outra instrução.
         - Se os nomes forem desconhecidos e a opção estiver ativa, use "INTERLOCUTOR 1", "INTERLOCUTOR 2", etc.
@@ -1485,31 +1697,144 @@ ${transcriberConsiderations.trim() ? transcriberConsiderations : "Nenhuma consid
 Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regras acima com rigor absoluto.
 `;
 
-            const filePartsPromises = transcriberFiles.map(fileToGenerativePart);
-            const resolvedFileParts = (await Promise.all(filePartsPromises)).filter(part => part !== null);
+            let transcriptionResultText = '';
+            if (selectedModel.startsWith('gpt')) {
+                try {
+                    if (!openaiApiKey) {
+                        throw new Error("Chave de API do OpenAI não configurada. Por favor, cadastre sua chave clicando no botão '⚙️ Chave ChatGPT' no cabeçalho.");
+                    }
+                    const whisperTranscripts: string[] = [];
+                    for (let i = 0; i < transcriberFiles.length; i++) {
+                        const file = transcriberFiles[i];
+                        setTranscribedText(prev => (prev ? prev + '\n' : '') + `[Processando áudio ${file.name} pelo Whisper de OpenAI...]`);
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('model', 'whisper-1');
+                        if (transcriberConsiderations) {
+                            formData.append('prompt', transcriberConsiderations);
+                        }
+                        const whisperResponse = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${openaiApiKey}`
+                            },
+                            body: formData
+                        });
+                        if (!whisperResponse.ok) {
+                            const errorData = await whisperResponse.json().catch(() => ({}));
+                            throw new Error(errorData.error?.message || `Erro Whisper HTTP ${whisperResponse.status}`);
+                        }
+                        const result = await whisperResponse.json();
+                        whisperTranscripts.push(result.text);
+                    }
 
-            if (resolvedFileParts.length !== transcriberFiles.length) {
-                setTranscriberError("Alguns arquivos de mídia não puderam ser processados e foram ignorados.");
+                    setTranscribedText("[Formatando transcrição final com ChatGPT...]");
+
+                    let formattingPrompt = `### Papel e Missão (Prioridade Máxima)
+1.  **Persona:** Atue como um especialista em transcrição forense. Sua precisão é crucial para investigações policiais.
+2.  **Missão Principal:** Transcrever o conteúdo dos arquivos de mídia fornecidos com a máxima fidelidade. O resultado deve ser claro, bem estruturado e pronto para ser anexado a um inquérito policial. Todos os dados são sigilosos.
+3.  **Atenção:** A transcrição deve ser literal, focando exclusivamente na captura fiel e exata do diálogo original do arquivo de mídia. Colocar a observação "(inaudível)" caso não tenha certeza do que foi dito.
+
+### Tarefa Específica: Transcrição de Mídia
+Formate e estruture a transcrição para cada um dos seguintes trechos de transcrição bruta fornecidos por mim. Siga ESTAS REGRAS ESTRITAMENTE para cada trecho:
+
+1.  **Cabeçalho do Arquivo:** Inicie a seção de cada arquivo com um cabeçalho claro baseado no nome do arquivo. Formato: \`### Transcrição do Arquivo: NOME_DO_ARQUIVO ###\`.
+
+2.  **Transcrição do Diálogo:**
+    *   Crie uma sub-seção chamada \`#### Transcrição do Diálogo ####\`.
+    *   O formato do diálogo **DEVE** ser uma lista, com cada fala em uma nova linha, começando com um hífen.
+
+3.  **Formato da Linha de Diálogo (REGRAS GERAIS):**
+    *   Siga ESTREITAMENTE as opções ativadas pelo usuário e suas considerações.
+    *   **Opção "Inserir o tempo":** Se ATIVA, inclua timestamps fictícios/estimados (\`HH:MM:SS\`) ou sequenciais simulando o tempo do áudio, ou deixe hifens simples se não for oportuno.
+    *   **IDENTIFICAÇÃO DE INTERLOCUTORES (REGRA DE OURO):**
+        - Se a opção "Identificar o interlocutor" estiver ATIVA, você **DEVE** identificar quem está falando.
+        - Se o usuário forneceu nomes nas "Considerações do Usuário" (ex: "Roberto e Litiane"), você **É OBRIGADO** a usar esses nomes para identificar as falas.
+        - Se os nomes forem desconhecidos e a opção estiver ativa, use "INTERLOCUTOR 1", "INTERLOCUTOR 2", etc.
+
+### Opções Ativadas pelo Usuário
+*   Identificar o interlocutor: ${transcriberOptions.identifySpeaker ? 'SIM' : 'NÃO'}
+*   Inserir o tempo na transcrição: ${transcriberOptions.insertTimestamp ? 'SIM' : 'NÃO'}
+
+### Considerações do Usuário (ORDENS SOBERANAS E ABSOLUTAS)
+${transcriberConsiderations.trim() ? transcriberConsiderations : "Nenhuma consideração adicional fornecida."}
+
+Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor seguindo todas as instruções acima:
+`;
+
+                    whisperTranscripts.forEach((text, index) => {
+                        formattingPrompt += `\n\n--- INÍCIO DO ARQUIVO DE MÍDIA: ${transcriberFiles[index].name} ---\n${text}\n--- FIM DO ARQUIVO DE MÍDIA: ${transcriberFiles[index].name} ---\n`;
+                    });
+
+                    transcriptionResultText = await generateContentWithOpenAI(selectedModel, [{ text: formattingPrompt }]);
+                } catch (err: any) {
+                    const isQuotaError = err.message?.toLowerCase().includes("quota") || 
+                                         err.message?.toLowerCase().includes("billing") || 
+                                         err.message?.toLowerCase().includes("limite") ||
+                                         err.message?.toLowerCase().includes("429") ||
+                                         err.message?.toLowerCase().includes("exceeded");
+                    if (isQuotaError) {
+                        console.warn("Whisper/OpenAI Quota Exceeded. Falling back to Gemini 3.5 Flash transcription seamlessly...");
+                        setSelectedModel('gemini-3.5-flash');
+                        localStorage.setItem('selectedModel', 'gemini-3.5-flash');
+                        
+                        setTranscribedText("[Estouro de cota detectado. Transcrevendo alternativamente com Gemini 3.5 Flash de alta cota...]");
+                        
+                        const filePartsPromises = transcriberFiles.map(fileToGenerativePart);
+                        const resolvedFileParts = (await Promise.all(filePartsPromises)).filter(part => part !== null);
+
+                        if (resolvedFileParts.length !== transcriberFiles.length) {
+                            setTranscriberError("Alguns arquivos de mídia não puderam ser processados e foram ignorados.");
+                        }
+                        if (resolvedFileParts.length === 0) {
+                            throw new Error("Nenhum arquivo de mídia pôde ser processado. Verifique os formatos aceitos.");
+                        }
+
+                        const contents: any[] = [{ text: prompt }];
+                        resolvedFileParts.forEach((part, index) => {
+                             const fileName = transcriberFiles[index].name;
+                             contents.push({ text: `\n\n--- INÍCIO DO ARQUIVO DE MÍDIA: ${fileName} ---` });
+                             contents.push(part);
+                             contents.push({ text: `--- FIM DO ARQUIVO DE MÍDIA: ${fileName} ---\n` });
+                        });
+
+                        const response = await ai.models.generateContent({
+                            model: 'gemini-3.5-flash',
+                            contents: { parts: contents }
+                        });
+                        transcriptionResultText = response.text || '';
+                    } else {
+                        throw err;
+                    }
+                }
+            } else {
+                const filePartsPromises = transcriberFiles.map(fileToGenerativePart);
+                const resolvedFileParts = (await Promise.all(filePartsPromises)).filter(part => part !== null);
+
+                if (resolvedFileParts.length !== transcriberFiles.length) {
+                    setTranscriberError("Alguns arquivos de mídia não puderam ser processados e foram ignorados.");
+                }
+                if (resolvedFileParts.length === 0) {
+                    throw new Error("Nenhum arquivo de mídia pôde ser processado. Verifique os formatos aceitos.");
+                }
+
+                const contents: any[] = [{ text: prompt }];
+                resolvedFileParts.forEach((part, index) => {
+                     const fileName = transcriberFiles[index].name;
+                     contents.push({ text: `\n\n--- INÍCIO DO ARQUIVO DE MÍDIA: ${fileName} ---` });
+                     contents.push(part);
+                     contents.push({ text: `--- FIM DO ARQUIVO DE MÍDIA: ${fileName} ---\n` });
+                });
+
+                const response = await ai.models.generateContent({
+                    model: selectedModel,
+                    contents: { parts: contents }
+                });
+                transcriptionResultText = response.text || '';
             }
-            if (resolvedFileParts.length === 0) {
-                throw new Error("Nenhum arquivo de mídia pôde ser processado. Verifique os formatos aceitos.");
-            }
 
-            const contents: any[] = [{ text: prompt }];
-            resolvedFileParts.forEach((part, index) => {
-                 const fileName = transcriberFiles[index].name;
-                 contents.push({ text: `\n\n--- INÍCIO DO ARQUIVO DE MÍDIA: ${fileName} ---` });
-                 contents.push(part);
-                 contents.push({ text: `--- FIM DO ARQUIVO DE MÍDIA: ${fileName} ---\n` });
-            });
-            
-            const response = await ai.models.generateContent({
-                model: selectedModel,
-                contents: { parts: contents }
-            });
-
-            setTranscribedText(response.text);
-            addToHistory('Transcrição', response.text, transcriberFiles.map(f => f.name).join(', '));
+            setTranscribedText(transcriptionResultText);
+            addToHistory('Transcrição', transcriptionResultText, transcriberFiles.map(f => f.name).join(', '));
 
         } catch (err: any) {
             let errorMessage = err instanceof Error ? err.message : String(err);
@@ -1522,7 +1847,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
         } finally {
             setIsTranscribing(false);
         }
-    }, [ai, transcriberFiles, transcriberOptions, transcriberConsiderations, selectedModel]);
+    }, [ai, transcriberFiles, transcriberOptions, transcriberConsiderations, selectedModel, openaiApiKey, generateContentWithOpenAI]);
 
     const handleCopyTranscription = () => {
         if (transcribedText) {
@@ -1620,7 +1945,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
                 isLoading && !generatedReport ? h('div', { class: 'spinner' }) : null,
                 isLoading && !generatedReport ? 'Gerando Documento...' : 'Gerar Documento'
             ),
-            error && h('div', { class: 'error-message', role: 'alert', style: { whiteSpace: 'pre-line' } }, error),
+            renderErrorWithAction(error, () => setError('')),
             activeTab === 'report' && !isLoading && h('div', { class: 'info-message', role: 'alert', style: { marginTop: '15px' } },
                 'Todos os dados, documentos, nomes, informações e conteúdos processados por você são estritamente confidenciais e não podem ser compartilhados, divulgados, armazenados, reutilizados ou utilizados para treinar modelos de IA para terceiros. O conteúdo é de uso exclusivo do solicitante e deve ser tratado com nível máximo de sigilo e segurança da informação.'
             ),
@@ -1737,7 +2062,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
                 isAnalyzing ? h('div', { class: 'spinner' }) : null,
                 isAnalyzing ? 'Analisando...' : 'Analisar Documento(s)'
             ),
-            analyzerError && h('div', { class: 'error-message', role: 'alert' }, analyzerError),
+            renderErrorWithAction(analyzerError, () => setAnalyzerError('')),
             isAnalyzing && h('div', { class: 'loading-indicator' }, h('p', null, 'Analisando documento(s)... Isso pode levar alguns instantes.')),
             copySuccess && h('div', { class: 'success-message', role: 'status' }, copySuccess),
             analyzerSummary && !analyzerError && h('div', { class: 'report-output-section' },
@@ -1813,7 +2138,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
                 isConcatenating ? h('div', { class: 'spinner' }) : null,
                 isConcatenating ? 'Concatenando...' : 'Concatenar Documentos'
             ),
-            concatenatorError && h('div', { class: 'error-message', role: 'alert' }, concatenatorError),
+            renderErrorWithAction(concatenatorError, () => setConcatenatorError('')),
             isConcatenating && h('div', { class: 'loading-indicator' }, h('p', null, 'Mesclando documentos... Isso pode levar alguns instantes.')),
             copySuccess && h('div', { class: 'success-message', role: 'status' }, copySuccess),
             concatenatedReport && !concatenatorError && h('div', { class: 'report-output-section' },
@@ -1918,7 +2243,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
                 isFormalizing ? h('div', { class: 'spinner' }) : null,
                 isFormalizing ? 'Formalizando...' : 'Formalizar Conteúdo'
             ),
-            formalizerError && h('div', { class: 'error-message', role: 'alert' }, formalizerError),
+            renderErrorWithAction(formalizerError, () => setFormalizerError('')),
             isFormalizing && h('div', { class: 'loading-indicator' }, h('p', null, 'Reescrevendo texto...')),
             copySuccess && h('div', { class: 'success-message', role: 'status' }, copySuccess),
             formalizerOutputText && !formalizerError && h('div', { class: 'report-output-section' },
@@ -1996,7 +2321,7 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
                 isTranscribing ? h('div', { class: 'spinner' }) : null,
                 isTranscribing ? 'Transcrevendo...' : 'Transcrever Mídia(s)'
             ),
-            transcriberError && h('div', { class: 'error-message', role: 'alert' }, transcriberError),
+            renderErrorWithAction(transcriberError, () => setTranscriberError('')),
             isTranscribing && h('div', { class: 'loading-indicator' }, h('p', null, 'Processando mídia... Isso pode levar vários minutos dependendo do tamanho do arquivo.')),
             copySuccess && h('div', { class: 'success-message', role: 'status' }, copySuccess),
             transcribedText && !transcriberError && h('div', { class: 'report-output-section' },
@@ -2087,25 +2412,27 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             h('div', { class: 'app-header' },
                 h('div', { style: { display: 'flex', alignItems: 'center', gap: '20px', paddingRight: '50px', flexWrap: 'wrap' } }, 
                     h('h1', { style: { margin: '0' } }, 'Gerador de Documentos Policiais'),
-                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85em', border: '1px solid var(--border-color)', padding: '4px 10px', borderRadius: '8px', backgroundColor: 'var(--bg-primary)' } },
-                        h('span', { style: { fontWeight: '600', color: 'var(--text-secondary)' } }, 'Modelo IA:'),
-                        h('select', { 
-                            value: selectedModel, 
-                            onChange: handleModelChange, 
-                            style: { 
-                                padding: '2px 6px', 
-                                borderRadius: '6px', 
-                                border: '1px solid var(--input-border)', 
-                                backgroundColor: 'var(--input-bg)', 
-                                color: 'var(--text-primary)', 
-                                fontSize: '1em',
-                                outline: 'none',
-                                cursor: 'pointer',
-                                fontWeight: '500'
-                            } 
-                        },
-                            h('option', { value: 'gemini-3.5-flash' }, '⚡ Gemini 3.5 Flash (Cota Alta)'),
-                            h('option', { value: 'gemini-3.1-pro-preview' }, '🧠 Gemini 3.1 Pro (Limite Estrito)')
+                    h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' } },
+                        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85em', border: '1px solid var(--border-color)', padding: '4px 10px', borderRadius: '8px', backgroundColor: 'var(--bg-primary)' } },
+                            h('span', { style: { fontWeight: '600', color: 'var(--text-secondary)' } }, 'Modelo IA:'),
+                            h('select', { 
+                                value: selectedModel, 
+                                onChange: handleModelChange, 
+                                style: { 
+                                    padding: '2px 6px', 
+                                    borderRadius: '6px', 
+                                    border: '1px solid var(--input-border)', 
+                                    backgroundColor: 'var(--input-bg)', 
+                                    color: 'var(--text-primary)', 
+                                    fontSize: '1em',
+                                    outline: 'none',
+                                    cursor: 'pointer',
+                                    fontWeight: '500'
+                                } 
+                            },
+                                h('option', { value: 'gemini-3.5-flash' }, '⚡ Gemini 3.5 Flash (Cota Alta)'),
+                                h('option', { value: 'gemini-3.1-pro-preview' }, '🧠 Gemini 3.1 Pro (Limite Estrito)')
+                            )
                         )
                     ),
                     user ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9em' } },
@@ -2178,9 +2505,83 @@ Abaixo estão os arquivos de mídia. Processe um por um, seguindo TODAS as regra
             showNotice && h('div', { class: 'floating-notice' },
                 h('h3', null, 'Mês de Junho'),
                 h('p', null, 'Valor gasto: ', h('span', { class: 'value-spent' }, 'R$ 430,00')),
-                h('p', null, 'Valor arrecadado: ', h('span', { class: 'value-earned' }, 'R$ 230,00')),
+                h('p', null, 'Valor arrecadado: ', h('span', { class: 'value-earned' }, 'R$ 430,00')),
                 h('p', { class: 'support-text' }, 'Ajude a manter o app ativo'),
                 h('button', { class: 'close-btn', onClick: () => setShowNotice(false) }, 'Quero utilizar o APP')
+            ),
+            showOpenAiConfig && h('div', { 
+                class: 'modal-overlay',
+                onClick: (e: any) => {
+                    if (e.target.classList.contains('modal-overlay')) {
+                        setShowOpenAiConfig(false);
+                    }
+                }
+            },
+                h('div', { class: 'modal-container' },
+                    h('div', { class: 'modal-header' },
+                        h('h3', { class: 'modal-title' }, 'Configurar Chave API OpenAI'),
+                        h('button', { class: 'modal-close-icon', onClick: () => setShowOpenAiConfig(false), 'aria-label': 'Fechar modal' }, '×')
+                    ),
+                    h('div', { class: 'modal-body' },
+                        h('div', { class: 'modal-warning-box' },
+                            h('strong', null, '🚨 ASSINATURA CHATGPT PLUS NÃO É A API!'),
+                            h('p', { style: { marginTop: '5px', marginBottom: '0', fontSize: '0.92em', lineHeight: '1.4' } }, 
+                                'A assinatura mensal "ChatGPT Plus" de $20/mês dá acesso exclusivo apenas ao site chat.openai.com. ' +
+                                'Ela NÃO dá direito ao uso da API de desenvolvedores da OpenAI. ' +
+                                'Para usar sua chave de API nesta aplicação, você precisará adicionar saldo pré-pago (mínimo de R$ 30 / $5) na sua conta de desenvolvedor em ' +
+                                h('a', { href: 'https://platform.openai.com/', target: '_blank', rel: 'noopener noreferrer', style: { color: 'var(--accent-primary)', textDecoration: 'underline', fontWeight: 'bold' } }, 'platform.openai.com') + '.'
+                            )
+                        ),
+                        h('div', { class: 'modal-info-box' },
+                            h('strong', null, '⚡ EXCELENTE ALTERNATIVA INTEGRADA:'),
+                            h('p', { style: { marginTop: '5px', marginBottom: '0', fontSize: '0.92em', lineHeight: '1.4' } }, 
+                                'Recomendamos usar os modelos "Gemini 3.5 Flash" ou "Gemini 3.1 Pro" no topo da tela. ' +
+                                'Eles utilizam a cota oficial do Google fornecida de fábrica no workspace da aplicação, funcionando perfeitamente de forma rápida, segura e nativa, sem precisar de chaves!'
+                            )
+                        ),
+                        h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
+                            h('label', { for: 'config-openai-key', style: { fontWeight: '600', fontSize: '0.95em' } }, 'Chave Secreta OpenAI (sk-...)'),
+                            h('input', {
+                                id: 'config-openai-key',
+                                type: 'password',
+                                value: openaiApiKey,
+                                placeholder: 'sk-proj-... ou sk-...',
+                                onInput: (e: any) => {
+                                    setOpenaiApiKey(e.target.value.trim());
+                                },
+                                style: {
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    borderRadius: '8px',
+                                    border: '1px solid var(--input-border)',
+                                    backgroundColor: 'var(--input-bg)',
+                                    color: 'var(--text-primary)',
+                                    outline: 'none',
+                                    fontSize: '0.95em'
+                                }
+                            })
+                        )
+                    ),
+                    h('div', { class: 'modal-footer' },
+                        h('button', { 
+                            class: 'secondary-button', 
+                            style: { margin: 0, padding: '8px 16px', width: 'auto', fontSize: '0.9em' }, 
+                            onClick: () => {
+                                setOpenaiApiKey('');
+                                localStorage.removeItem('openai_api_key');
+                                setShowOpenAiConfig(false);
+                            }
+                        }, 'Limpar Chave'),
+                        h('button', { 
+                            class: 'action-button', 
+                            style: { margin: 0, padding: '8px 16px', width: 'auto', fontSize: '0.9em', fontWeight: 'bold' }, 
+                            onClick: () => {
+                                localStorage.setItem('openai_api_key', openaiApiKey);
+                                setShowOpenAiConfig(false);
+                            }
+                        }, 'Salvar e Fechar')
+                    )
+                )
             ),
             h('div', { class: 'app-footer' },
                 h('p', { class: 'app-subtitle' }, 'Desenvolvido por: Escrivão Ricardo Andrade - Versão 4.1'),
