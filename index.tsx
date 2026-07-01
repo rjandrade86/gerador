@@ -300,6 +300,7 @@ const App = () => {
     const [adminUsers, setAdminUsers] = useState<any[]>([]);
     const [adminLogs, setAdminLogs] = useState<any[]>([]);
     const [loadingAdmin, setLoadingAdmin] = useState(false);
+    const [adminError, setAdminError] = useState('');
 
     // Lista de e-mails autorizados (Admin).
     const ADMIN_EMAILS: string[] = [
@@ -413,10 +414,16 @@ const App = () => {
     };
 
     const fetchAdminData = async () => {
-        if (!user || user.email !== 'ricardoasdeandrade@gmail.com') return;
+        if (!user || user.email !== 'ricardoasdeandrade@gmail.com') {
+            console.log("Not admin, skipping fetchAdminData");
+            return;
+        }
         setLoadingAdmin(true);
+        setAdminError('');
         try {
+            console.log("Fetching admin data...");
             const usersSnapshot = await getDocs(collection(db, 'users'));
+            console.log("Users fetched:", usersSnapshot.docs.length);
             const usersData: any[] = [];
             const logsData: any[] = [];
             
@@ -425,24 +432,31 @@ const App = () => {
                 const uid = userDoc.id;
                 usersData.push({ id: uid, ...uData });
                 
-                const usageSnapshot = await getDocs(collection(db, `users/${uid}/tokenUsage`));
-                usageSnapshot.docs.forEach(usageDoc => {
-                    logsData.push({
-                        id: usageDoc.id,
-                        userId: uid,
-                        email: uData.email || 'Desconhecido',
-                        ...usageDoc.data()
+                try {
+                    const usageSnapshot = await getDocs(collection(db, `users/${uid}/tokenUsage`));
+                    usageSnapshot.docs.forEach(usageDoc => {
+                        logsData.push({
+                            id: usageDoc.id,
+                            userId: uid,
+                            email: uData.email || 'Desconhecido',
+                            ...usageDoc.data()
+                        });
                     });
-                });
+                } catch (err: any) {
+                    console.error(`Erro ao buscar tokenUsage para user ${uid}:`, err);
+                    setAdminError(prev => prev + `Erro (logs ${uid}): ${err.message}\n`);
+                }
             }
             
             // Sort logs by date descending
             logsData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             
+            console.log("Admin Data:", { users: usersData.length, logs: logsData.length });
             setAdminUsers(usersData);
             setAdminLogs(logsData);
-        } catch (e) {
+        } catch (e: any) {
             console.error("Erro ao buscar dados de admin:", e);
+            setAdminError(`Erro geral: ${e.message}`);
         }
         setLoadingAdmin(false);
     };
@@ -2662,9 +2676,6 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                             )
                         ) :
                         h('div', null,
-                            h('div', { style: { padding: '10px', background: '#f0f0f0', color: 'black', margin: '10px 0', fontSize: '12px', textAlign: 'left', overflowWrap: 'break-word' } },
-                                `DEBUG: user: ${!!user} | userProfileData: ${userProfileData ? JSON.stringify(userProfileData) : 'null'} | authLoading: ${authLoading} | isAuthorized: ${isAuthorized}`
-                            ),
                             authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authError),
                             !authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authDenialReason),
                             h('p', { style: { marginBottom: '20px', color: 'var(--text-secondary)', lineHeight: '1.5', fontSize: '0.9em' } }, `Logado como: ${user.email}`),
@@ -2738,6 +2749,7 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                     h('button', { onClick: () => setShowAdminPanel(false), class: 'secondary-button' }, 'Fechar')
                 ),
                 loadingAdmin ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, h('div', { class: 'spinner' }), 'Carregando dados...') : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '30px' } },
+                    adminError && h('div', { style: { padding: '10px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '8px', border: '1px solid #f87171', whiteSpace: 'pre-wrap' } }, adminError),
                     h('div', null,
                         h('h3', { style: { color: 'var(--text-secondary)', marginBottom: '10px' } }, `Usuários Cadastrados (${adminUsers.length})`),
                         h('div', { style: { display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' } },
