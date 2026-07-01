@@ -314,16 +314,28 @@ const App = () => {
             return;
         }
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                setAuthLoading(true);
+            }
             setUser(currentUser);
             if (currentUser && currentUser.email) {
+                let profileData: any = null;
                 try {
                     const userRef = doc(db, `users/${currentUser.uid}`);
-                    const userSnap = await getDoc(userRef);
-                    let profileData = {};
-                    if (userSnap.exists()) {
-                        profileData = userSnap.data();
-                    } else {
-                        // Novo usuário, 7 dias de trial
+                    let exists = false;
+                    try {
+                        const userSnap = await getDoc(userRef);
+                        if (userSnap.exists()) {
+                            profileData = userSnap.data();
+                            exists = true;
+                        }
+                    } catch (e: any) {
+                        console.warn("Could not fetch from Firestore, defaulting to trial:", e);
+                        setAuthError(e.message || "Erro ao conectar com o banco de dados. Modo offline/trial.");
+                    }
+                    
+                    if (!exists) {
+                        // Novo usuário ou erro, fallback para 7 dias de trial
                         const trialEndsAt = new Date();
                         trialEndsAt.setDate(trialEndsAt.getDate() + 7);
                         profileData = {
@@ -334,11 +346,16 @@ const App = () => {
                         };
                     }
                     
-                    // Sempre atualiza o email para garantir
-                    await setDoc(userRef, { email: currentUser.email, ...profileData }, { merge: true });
                     setUserProfileData(profileData);
-                } catch (e) {
-                    console.error("Erro ao sincronizar perfil do usuário", e);
+                    try {
+                        // Sempre atualiza o email para garantir
+                        await setDoc(userRef, { email: currentUser.email, ...profileData }, { merge: true });
+                    } catch (e) {
+                        console.warn("Erro ao salvar perfil no firestore, prosseguindo...", e);
+                    }
+                } catch (e: any) {
+                    console.error("Erro geral ao sincronizar perfil do usuário", e);
+                    setUserProfileData(profileData || { email: currentUser.email, status: 'trial' });
                 }
             } else {
                 setUserProfileData(null);
