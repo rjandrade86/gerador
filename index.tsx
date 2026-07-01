@@ -2645,7 +2645,8 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                             )
                         ) :
                         h('div', null,
-                            h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authDenialReason),
+                            authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authError),
+                            !authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authDenialReason),
                             h('p', { style: { marginBottom: '20px', color: 'var(--text-secondary)', lineHeight: '1.5', fontSize: '0.9em' } }, `Logado como: ${user.email}`),
                             h('button', { onClick: handleLogout, class: 'secondary-button', style: { width: '100%', padding: '10px' } }, 'Sair / Tentar outra conta')
                         )

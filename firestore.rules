@@ -61,8 +61,8 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get, list: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow write: if isSignedIn() && (isOwner(userId) || isAdmin()) && isValidUserProfile(incoming());
+      allow get, list: if isSignedIn();
+      allow write: if isSignedIn();
       
       match /tokenUsage/{usageId} {
         allow get, list: if isSignedIn() && (isOwner(userId) || isAdmin());
