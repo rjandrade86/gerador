@@ -2662,6 +2662,9 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                             )
                         ) :
                         h('div', null,
+                            h('div', { style: { padding: '10px', background: '#f0f0f0', color: 'black', margin: '10px 0', fontSize: '12px', textAlign: 'left', overflowWrap: 'break-word' } },
+                                `DEBUG: user: ${!!user} | userProfileData: ${userProfileData ? JSON.stringify(userProfileData) : 'null'} | authLoading: ${authLoading} | isAuthorized: ${isAuthorized}`
+                            ),
                             authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authError),
                             !authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authDenialReason),
                             h('p', { style: { marginBottom: '20px', color: 'var(--text-secondary)', lineHeight: '1.5', fontSize: '0.9em' } }, `Logado como: ${user.email}`),
