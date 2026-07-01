@@ -5,87 +5,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    function isSignedIn() { 
-      return request.auth != null; 
-    }
-    
-    function isVerified() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-    function isAdmin() {
-      return request.auth != null && (request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2' || (request.auth.token != null && request.auth.token.email == 'ricardoasdeandrade@gmail.com'));
-    }
-
-    function isValidId(id) { 
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-. ]+$'); 
-    }
-
-    function incoming() { return request.resource.data; }
-    function existing() { return resource.data; }
-
-    function isValidHistoryItem(data) {
-      return data.keys().hasAll(['date', 'type', 'content', 'title']) &&
-             data.keys().size() == 4 &&
-             data.date is string && data.date.size() <= 100 &&
-             data.type is string && data.type.size() <= 50 &&
-             data.content is string && data.content.size() <= 500000 &&
-             data.title is string && data.title.size() <= 200;
-    }
-
-    function isValidTrainingFile(data) {
-      return data.keys().hasAll(['name', 'type', 'base64Data', 'size']) &&
-             data.keys().size() == 4 &&
-             data.name is string && data.name.size() <= 300 &&
-             data.type is string && data.type.size() <= 100 &&
-             data.base64Data is string && data.base64Data.size() <= 5000000 &&
-             data.size is number && data.size >= 0;
-    }
-
-    function isValidTokenUsage(data) {
-      return data.keys().hasAll(['tokens', 'date', 'model']) &&
-             data.tokens is number &&
-             data.date is string &&
-             data.model is string;
-    }
-
-    function isValidUserProfile(data) {
-      return data.keys().hasAll(['email']) && data.email is string &&
-             (!data.keys().hasAny(['status']) || data.status is string) &&
-             (!data.keys().hasAny(['trialEndsAt']) || data.trialEndsAt is string || data.trialEndsAt == null) &&
-             (!data.keys().hasAny(['paidUntil']) || data.paidUntil is string || data.paidUntil == null);
-    }
-
     match /users/{userId} {
-      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow list: if isAdmin();
-      allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow delete: if isAdmin();
+      allow get: if request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
+      allow list: if request.auth != null && (request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
+      allow create, update: if request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
+      allow delete: if request.auth != null && (request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
       
       match /tokenUsage/{usageId} {
-        allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
-        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
-        allow create, update: if isSignedIn() && isOwner(userId) && isValidTokenUsage(incoming());
-        allow delete: if false;
+        allow read, write: if request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
       }
       
       match /history/{historyId} {
-        allow get: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(historyId);
-        allow list: if isSignedIn() && isVerified() && isOwner(userId);
-        allow create, update: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(historyId) && isValidHistoryItem(incoming());
-        allow delete: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(historyId);
+        allow read, write: if request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
       }
 
       match /trainingFiles/{fileId} {
-        allow get: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(fileId);
-        allow list: if isSignedIn() && isVerified() && isOwner(userId);
-        allow create, update: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(fileId) && isValidTrainingFile(incoming());
-        allow delete: if isSignedIn() && isVerified() && isOwner(userId) && isValidId(fileId);
+        allow read, write: if request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
       }
     }
   }

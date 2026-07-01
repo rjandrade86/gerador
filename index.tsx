@@ -209,6 +209,7 @@ const App = () => {
         return stored || process.env.OPENAI_API_KEY || '';
     });
     const [showOpenAiConfig, setShowOpenAiConfig] = useState(false);
+    const [showOpenAiKey, setShowOpenAiKey] = useState(false);
     const [error, setError] = useState('');
     const [copySuccess, setCopySuccess] = useState('');
     const [theme, setTheme] = useState('light');
@@ -282,7 +283,6 @@ const App = () => {
     const [isTranscribing, setIsTranscribing] = useState(false);
     const [transcribedText, setTranscribedText] = useState('');
     const [transcriberError, setTranscriberError] = useState('');
-    const [showNotice, setShowNotice] = useState(true);
     const [confirmClear, setConfirmClear] = useState(false);
 
     // Auth state
@@ -293,6 +293,7 @@ const App = () => {
     // Auth Form State
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [isRegistering, setIsRegistering] = useState(false);
     const [authError, setAuthError] = useState('');
     
@@ -321,43 +322,46 @@ const App = () => {
             }
             setUser(currentUser);
             if (currentUser && currentUser.email) {
-                let profileData: any = null;
+                // Pre-populate with a robust 7-day trial fallback in-memory immediately.
+                const defaultTrialEndsAt = new Date();
+                defaultTrialEndsAt.setDate(defaultTrialEndsAt.getDate() + 7);
+                let profileData: any = {
+                    email: currentUser.email,
+                    status: 'trial',
+                    trialEndsAt: defaultTrialEndsAt.toISOString(),
+                    paidUntil: ''
+                };
+                
+                let exists = false;
+                
                 try {
                     const userRef = doc(db, `users/${currentUser.uid}`);
-                    let exists = false;
                     try {
                         const userSnap = await getDoc(userRef);
                         if (userSnap.exists()) {
-                            profileData = userSnap.data();
+                            profileData = { ...profileData, ...userSnap.data() };
                             exists = true;
                         }
                     } catch (e: any) {
-                        console.warn("Could not fetch from Firestore, defaulting to trial:", e);
-                        setAuthError(e.message || "Erro ao conectar com o banco de dados. Modo offline/trial.");
-                    }
-                    
-                    if (!exists) {
-                        // Novo usuário ou erro, fallback para 7 dias de trial
-                        const trialEndsAt = new Date();
-                        trialEndsAt.setDate(trialEndsAt.getDate() + 7);
-                        profileData = {
-                            email: currentUser.email,
-                            status: 'trial',
-                            trialEndsAt: trialEndsAt.toISOString(),
-                            paidUntil: ''
-                        };
+                        console.warn("Could not fetch profile from Firestore, using trial fallback:", e);
+                        // We ONLY show the database error if the user is the Admin.
+                        // For regular users, we want a seamless fallback to trial mode without errors on screen.
+                        if (currentUser.email === 'ricardoasdeandrade@gmail.com') {
+                            setAuthError(`Erro de Admin no Firestore: ${e.message || "Erro de conexão."}`);
+                        }
                     }
                     
                     setUserProfileData(profileData);
+                    
+                    // If the user document didn't exist in Firestore, or if we want to ensure it is kept updated:
                     try {
-                        // Sempre atualiza o email para garantir
                         await setDoc(userRef, { email: currentUser.email, ...profileData }, { merge: true });
                     } catch (e) {
-                        console.warn("Erro ao salvar perfil no firestore, prosseguindo...", e);
+                        console.warn("Erro ao salvar perfil no firestore, prosseguindo com dados em memória...", e);
                     }
                 } catch (e: any) {
-                    console.error("Erro geral ao sincronizar perfil do usuário", e);
-                    setUserProfileData(profileData || { email: currentUser.email, status: 'trial' });
+                    console.error("Erro geral ao sincronizar perfil do usuário:", e);
+                    setUserProfileData(profileData);
                 }
             } else {
                 setUserProfileData(null);
@@ -2603,6 +2607,8 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
             if (status === 'blocked') {
                 isAuthorized = false;
                 authDenialReason = 'Sua conta foi bloqueada pelo administrador.';
+            } else if (status === 'lifetime') {
+                isAuthorized = true;
             } else {
                 const trialEndsAt = userProfileData?.trialEndsAt ? new Date(userProfileData.trialEndsAt) : null;
                 const paidUntil = userProfileData?.paidUntil ? new Date(userProfileData.paidUntil) : null;
@@ -2639,14 +2645,45 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                                     required: true,
                                     class: 'input-field'
                                 }),
-                                h('input', { 
-                                    type: 'password', 
-                                    placeholder: 'Senha',
-                                    value: password,
-                                    onChange: (e: any) => setPassword(e.target.value),
-                                    required: true,
-                                    class: 'input-field'
-                                }),
+                                h('div', { style: { position: 'relative', width: '100%', display: 'flex', alignItems: 'center' } },
+                                    h('input', { 
+                                        type: showPassword ? 'text' : 'password', 
+                                        placeholder: 'Senha',
+                                        value: password,
+                                        onChange: (e: any) => setPassword(e.target.value),
+                                        required: true,
+                                        class: 'input-field',
+                                        style: { width: '100%', paddingRight: '40px', boxSizing: 'border-box' }
+                                    }),
+                                    h('button', {
+                                        type: 'button',
+                                        onClick: () => setShowPassword(!showPassword),
+                                        title: showPassword ? "Ocultar senha" : "Mostrar senha",
+                                        style: {
+                                            position: 'absolute',
+                                            right: '10px',
+                                            background: 'none',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            color: 'var(--text-secondary)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            padding: '0'
+                                        }
+                                    },
+                                        showPassword ? 
+                                            h('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+                                                h('path', { d: "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" }),
+                                                h('line', { x1: "1", y1: "1", x2: "23", y2: "23" })
+                                            )
+                                        :
+                                            h('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+                                                h('path', { d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" }),
+                                                h('circle', { cx: "12", cy: "12", r: "3" })
+                                            )
+                                    )
+                                ),
                                 h('button', { type: 'submit', class: 'action-button', style: { width: '100%', padding: '12px', fontSize: '1em', fontWeight: 'bold' } }, 
                                     isRegistering ? 'Criar Conta' : 'Entrar com E-mail'
                                 )
@@ -2687,6 +2724,17 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
         );
     }
 
+    let accessLabel = '';
+    if (userProfileData && userProfileData.status !== 'blocked') {
+        if (userProfileData.status === 'lifetime') {
+            accessLabel = ' (Acesso Vitalício)';
+        } else if (userProfileData.paidUntil && new Date(userProfileData.paidUntil) > new Date()) {
+            accessLabel = ` (Acesso até ${new Date(userProfileData.paidUntil).toLocaleDateString()})`;
+        } else if (userProfileData.trialEndsAt && new Date(userProfileData.trialEndsAt) > new Date()) {
+            accessLabel = ` (Teste até ${new Date(userProfileData.trialEndsAt).toLocaleDateString()})`;
+        }
+    }
+
     return (
         h('div', null,
             h('div', { class: 'app-header' },
@@ -2721,7 +2769,7 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                             class: 'secondary-button',
                             style: { padding: '4px 8px', fontSize: '0.9em', margin: 0 }
                         }, 'Painel Admin'),
-                        h('span', null, `👤 ${user.email}`),
+                        h('span', { title: accessLabel }, `👤 ${user.email}${accessLabel}`),
                         h('button', { onClick: handleLogout, class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.9em', margin: 0 } }, 'Sair')
                     ) : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' } },
                         h('button', { onClick: handleLogin, class: 'action-button', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 16px', width: 'auto', fontSize: '0.9em', margin: 0, backgroundColor: 'var(--bg-card)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', fontWeight: 'bold', borderRadius: '8px' } }, 
@@ -2763,6 +2811,9 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                                 if (u.status === 'blocked') {
                                     accessStatusText = 'Bloqueado';
                                     statusColor = '#ef4444';
+                                } else if (u.status === 'lifetime') {
+                                    accessStatusText = 'Vitalício';
+                                    statusColor = '#10b981';
                                 } else if (isPaidActive) {
                                     accessStatusText = `Pago até ${new Date(u.paidUntil).toLocaleDateString()}`;
                                     statusColor = '#10b981';
@@ -2784,7 +2835,13 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                                                 updateUserAccess(u.id, { paidUntil: d.toISOString(), status: 'active' });
                                             },
                                             class: 'action-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, flex: 1 } 
-                                        }, '+30 Dias (Pago)'),
+                                        }, '+30 Dias'),
+                                        h('button', { 
+                                            onClick: () => {
+                                                updateUserAccess(u.id, { status: 'lifetime' });
+                                            },
+                                            class: 'action-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, flex: 1, backgroundColor: '#8b5cf6' } 
+                                        }, 'Vitalício'),
                                         
                                         u.status !== 'blocked' ? 
                                             h('button', { 
@@ -2872,13 +2929,6 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
             activeTab === 'formalizer' ? renderFormalizerTab() :
             activeTab === 'transcriber' ? renderTranscriberTab() :
             renderHistoryTab(),
-            showNotice && h('div', { class: 'floating-notice' },
-                h('h3', null, 'Mês de Junho'),
-                h('p', null, 'Valor gasto: ', h('span', { class: 'value-spent' }, 'R$ 430,00')),
-                h('p', null, 'Valor arrecadado: ', h('span', { class: 'value-earned' }, 'R$ 430,00')),
-                h('p', { class: 'support-text' }, 'Ajude a manter o app ativo'),
-                h('button', { class: 'close-btn', onClick: () => setShowNotice(false) }, 'Quero utilizar o APP')
-            ),
             showOpenAiConfig && h('div', { 
                 class: 'modal-overlay',
                 onClick: (e: any) => {
@@ -2911,25 +2961,56 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                         ),
                         h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
                             h('label', { for: 'config-openai-key', style: { fontWeight: '600', fontSize: '0.95em' } }, 'Chave Secreta OpenAI (sk-...)'),
-                            h('input', {
-                                id: 'config-openai-key',
-                                type: 'password',
-                                value: openaiApiKey,
-                                placeholder: 'sk-proj-... ou sk-...',
-                                onInput: (e: any) => {
-                                    setOpenaiApiKey(e.target.value.trim());
+                            h('div', { style: { position: 'relative', width: '100%', display: 'flex', alignItems: 'center' } },
+                                h('input', {
+                                    id: 'config-openai-key',
+                                    type: showOpenAiKey ? 'text' : 'password',
+                                    value: openaiApiKey,
+                                    placeholder: 'sk-proj-... ou sk-...',
+                                    onInput: (e: any) => {
+                                        setOpenaiApiKey(e.target.value.trim());
+                                    },
+                                    style: {
+                                        width: '100%',
+                                        padding: '10px 40px 10px 12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--input-border)',
+                                        backgroundColor: 'var(--input-bg)',
+                                        color: 'var(--text-primary)',
+                                        outline: 'none',
+                                        fontSize: '0.95em',
+                                        boxSizing: 'border-box'
+                                    }
+                                }),
+                                h('button', {
+                                    type: 'button',
+                                    onClick: () => setShowOpenAiKey(!showOpenAiKey),
+                                    title: showOpenAiKey ? "Ocultar chave" : "Mostrar chave",
+                                    style: {
+                                        position: 'absolute',
+                                        right: '10px',
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        color: 'var(--text-secondary)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '0'
+                                    }
                                 },
-                                style: {
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    borderRadius: '8px',
-                                    border: '1px solid var(--input-border)',
-                                    backgroundColor: 'var(--input-bg)',
-                                    color: 'var(--text-primary)',
-                                    outline: 'none',
-                                    fontSize: '0.95em'
-                                }
-                            })
+                                    showOpenAiKey ? 
+                                        h('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+                                            h('path', { d: "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" }),
+                                            h('line', { x1: "1", y1: "1", x2: "23", y2: "23" })
+                                        )
+                                    :
+                                        h('svg', { xmlns: "http://www.w3.org/2000/svg", width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
+                                            h('path', { d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" }),
+                                            h('circle', { cx: "12", cy: "12", r: "3" })
+                                        )
+                                )
+                            )
                         )
                     ),
                     h('div', { class: 'modal-footer' },
