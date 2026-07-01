@@ -10,7 +10,7 @@ service cloud.firestore {
     }
     
     function isVerified() {
-      return request.auth != null; // Simplified for now since we allow email/password without mandatory verification
+      return request.auth != null;
     }
 
     function isOwner(userId) {
@@ -61,13 +61,15 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if true;
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
       allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && (isOwner(userId) || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
-      allow delete: if request.auth != null && request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2';
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
       
       match /tokenUsage/{usageId} {
-        allow read: if true;
+        allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow list: if isSignedIn() && (isOwner(userId) || isAdmin());
         allow create, update: if isSignedIn() && isOwner(userId) && isValidTokenUsage(incoming());
         allow delete: if false;
       }

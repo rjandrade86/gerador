@@ -1,6 +1,12 @@
 {
-  "firestore": {
-    "database": "ai-studio-geradorrelatorio-ac34cf21-0fc7-4bf8-a137-5650165d9b35",
-    "rules": "firestore.rules"
-  }
+  "firestore": [
+    {
+      "database": "(default)",
+      "rules": "firestore.rules"
+    },
+    {
+      "database": "ai-studio-geradorrelatorio-ac34cf21-0fc7-4bf8-a137-5650165d9b35",
+      "rules": "firestore.rules"
+    }
+  ]
 }

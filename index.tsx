@@ -33,7 +33,8 @@ let authInstance: any = null;
 try {
   if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     appInstance = initializeApp(firebaseConfig);
-    dbInstance = getFirestore(appInstance, firebaseConfig.firestoreDatabaseId || undefined);
+    console.log("Firebase config firestoreDatabaseId:", firebaseConfig.firestoreDatabaseId);
+    dbInstance = getFirestore(appInstance, "ai-studio-geradorrelatorio-ac34cf21-0fc7-4bf8-a137-5650165d9b35");
     authInstance = getAuth(appInstance);
   } else {
     console.log("Firebase is not fully configured (apiKey or projectId is missing). Sync is disabled.");
