@@ -11,7 +11,7 @@ import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, Page
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, getDoc } from 'firebase/firestore';
 const configs = (import.meta as any).glob('./firebase-applet-config.json', { eager: true });
 const firebaseConfigImport = (configs['./firebase-applet-config.json'] as any)?.default || {};
@@ -286,29 +286,103 @@ const App = () => {
 
     // Auth state
     const [user, setUser] = useState<User | null>(null);
+    const [userProfileData, setUserProfileData] = useState<any>(null);
+    const [authLoading, setAuthLoading] = useState(true);
+    
+    // Auth Form State
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [isRegistering, setIsRegistering] = useState(false);
+    const [authError, setAuthError] = useState('');
+    
+    // Admin Panel State
+    const [showAdminPanel, setShowAdminPanel] = useState(false);
+    const [adminUsers, setAdminUsers] = useState<any[]>([]);
+    const [adminLogs, setAdminLogs] = useState<any[]>([]);
+    const [loadingAdmin, setLoadingAdmin] = useState(false);
+
+    // Lista de e-mails autorizados (Admin).
+    const ADMIN_EMAILS: string[] = [
+        'ricardoasdeandrade@gmail.com'
+    ];
 
     useEffect(() => {
         if (!auth) {
             setUser(null);
+            setUserProfileData(null);
+            setAuthLoading(false);
             return;
         }
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
+            if (currentUser && currentUser.email) {
+                try {
+                    const userRef = doc(db, `users/${currentUser.uid}`);
+                    const userSnap = await getDoc(userRef);
+                    let profileData = {};
+                    if (userSnap.exists()) {
+                        profileData = userSnap.data();
+                    } else {
+                        // Novo usuário, 7 dias de trial
+                        const trialEndsAt = new Date();
+                        trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+                        profileData = {
+                            email: currentUser.email,
+                            status: 'trial',
+                            trialEndsAt: trialEndsAt.toISOString(),
+                            paidUntil: ''
+                        };
+                    }
+                    
+                    // Sempre atualiza o email para garantir
+                    await setDoc(userRef, { email: currentUser.email, ...profileData }, { merge: true });
+                    setUserProfileData(profileData);
+                } catch (e) {
+                    console.error("Erro ao sincronizar perfil do usuário", e);
+                }
+            } else {
+                setUserProfileData(null);
+            }
+            setAuthLoading(false);
         });
         return () => unsubscribe();
     }, []);
 
     const handleLogin = async () => {
         if (!auth) {
-            setError("Sincronização na nuvem indisponível (Firebase não configurado). Seus dados estão sendo guardados localmente com segurança.");
+            setAuthError("Sincronização na nuvem indisponível (Firebase não configurado).");
             return;
         }
+        setAuthError('');
         try {
             const provider = new GoogleAuthProvider();
             await signInWithPopup(auth, provider);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Login Error:", error);
-            setError("Erro ao fazer login. Tente novamente.");
+            setAuthError(error.message || "Erro ao fazer login. Tente novamente.");
+        }
+    };
+
+    const handleEmailAuth = async (e: any) => {
+        e.preventDefault();
+        if (!auth) {
+            setAuthError("Sincronização na nuvem indisponível.");
+            return;
+        }
+        if (!email || !password) {
+            setAuthError("Preencha email e senha.");
+            return;
+        }
+        setAuthError('');
+        try {
+            if (isRegistering) {
+                await createUserWithEmailAndPassword(auth, email, password);
+            } else {
+                await signInWithEmailAndPassword(auth, email, password);
+            }
+        } catch (error: any) {
+            console.error("Auth Error:", error);
+            setAuthError(error.message || "Erro de autenticação.");
         }
     };
 
@@ -318,6 +392,52 @@ const App = () => {
             await signOut(auth);
         } catch (error) {
             console.error("Logout Error:", error);
+        }
+    };
+
+    const fetchAdminData = async () => {
+        if (!user || user.email !== 'ricardoasdeandrade@gmail.com') return;
+        setLoadingAdmin(true);
+        try {
+            const usersSnapshot = await getDocs(collection(db, 'users'));
+            const usersData: any[] = [];
+            const logsData: any[] = [];
+            
+            for (const userDoc of usersSnapshot.docs) {
+                const uData = userDoc.data();
+                const uid = userDoc.id;
+                usersData.push({ id: uid, ...uData });
+                
+                const usageSnapshot = await getDocs(collection(db, `users/${uid}/tokenUsage`));
+                usageSnapshot.docs.forEach(usageDoc => {
+                    logsData.push({
+                        id: usageDoc.id,
+                        userId: uid,
+                        email: uData.email || 'Desconhecido',
+                        ...usageDoc.data()
+                    });
+                });
+            }
+            
+            // Sort logs by date descending
+            logsData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            
+            setAdminUsers(usersData);
+            setAdminLogs(logsData);
+        } catch (e) {
+            console.error("Erro ao buscar dados de admin:", e);
+        }
+        setLoadingAdmin(false);
+    };
+
+    const updateUserAccess = async (userId: string, updates: any) => {
+        try {
+            await setDoc(doc(db, `users/${userId}`), updates, { merge: true });
+            // Atualiza os dados localmente
+            setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, ...updates } : u));
+        } catch (e) {
+            console.error("Erro ao atualizar acesso do usuário:", e);
+            alert("Erro ao atualizar acesso do usuário.");
         }
     };
 
@@ -387,6 +507,20 @@ const App = () => {
         }
     });
 
+    const recordTokenUsage = useCallback(async (modelName: string, tokens: number) => {
+        if (!user || !db || tokens <= 0) return;
+        try {
+            const usageRef = doc(collection(db, `users/${user.uid}/tokenUsage`));
+            await setDoc(usageRef, {
+                tokens,
+                model: modelName,
+                date: new Date().toISOString()
+            });
+        } catch (e) {
+            console.error("Erro ao registrar tokens:", e);
+        }
+    }, [user]);
+
     const generateContentWithOpenAI = useCallback(async (modelName: string, parts: any[]): Promise<string> => {
         if (!openaiApiKey) {
             throw new Error("Chave de API do OpenAI não configurada. Dica: Altere o modelo de IA no topo da tela para usar o 'Gemini 3.5 Flash' ou 'Gemini 3.1 Pro' (que já estão configurados de fábrica de forma nativa no espaço de trabalho), ou envie uma mensagem ao assistente para inserir sua chave OpenAI.");
@@ -420,15 +554,18 @@ const App = () => {
         
         const data = await response.json();
         const text = data.choices[0]?.message?.content;
+        const tokens = data.usage?.total_tokens || 0;
+        recordTokenUsage(modelName, tokens);
         if (!text) {
             throw new Error("A API do OpenAI retornou uma resposta sem conteúdo textual.");
         }
         return text;
-    }, [openaiApiKey]);
+    }, [openaiApiKey, recordTokenUsage]);
 
     const generateContent = useCallback(async (model: string, parts: any[]): Promise<string> => {
         if (model.startsWith('gpt')) {
             try {
+                // OpenAI is called directly, we'll track tokens inside generateContentWithOpenAI
                 return await generateContentWithOpenAI(model, parts);
             } catch (err: any) {
                 const isQuotaError = err.message?.toLowerCase().includes("quota") || 
@@ -448,6 +585,9 @@ const App = () => {
                         contents: { parts: parts }
                     });
                     const reportText = geminiInternalResponse.text;
+                    const tokens = geminiInternalResponse.usageMetadata?.totalTokenCount || 0;
+                    recordTokenUsage('gemini-3.5-flash', tokens);
+
                     if (!reportText) {
                         let specificError = "O modelo não retornou conteúdo textual no fallback.";
                         if (geminiInternalResponse.promptFeedback?.blockReason) {
@@ -465,6 +605,9 @@ const App = () => {
                 contents: { parts: parts }
             });
             const reportText = geminiInternalResponse.text;
+            const tokens = geminiInternalResponse.usageMetadata?.totalTokenCount || 0;
+            recordTokenUsage(model, tokens);
+
             if (!reportText) {
                 let specificError = "O modelo não retornou conteúdo textual.";
                 if (geminiInternalResponse.promptFeedback?.blockReason) {
@@ -474,7 +617,7 @@ const App = () => {
             }
             return reportText;
         }
-    }, [ai, generateContentWithOpenAI, setSelectedModel]);
+    }, [ai, generateContentWithOpenAI, setSelectedModel, recordTokenUsage]);
 
     const MASTER_PROMPT = `### Papel, Missão e Formato (Prioridade Máxima)
 1.  **Persona:** Atue como um Delegado de Polícia com vasta experiência e profundo conhecimento jurídico e investigativo.
@@ -2407,6 +2550,110 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
     );
 
 
+    if (authLoading) {
+        return h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', flexDirection: 'column', gap: '20px' } },
+            h('h2', { style: { color: 'var(--text-secondary)' } }, 'Verificando acesso...'),
+            h('div', { class: 'loading-spinner' })
+        );
+    }
+
+    const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
+    let isAuthorized = false;
+    let authDenialReason = 'Acesso não autorizado.';
+
+    if (user && (isAdmin || userProfileData)) {
+        if (isAdmin) {
+            isAuthorized = true;
+        } else {
+            const now = new Date();
+            const status = userProfileData?.status;
+            
+            if (status === 'blocked') {
+                isAuthorized = false;
+                authDenialReason = 'Sua conta foi bloqueada pelo administrador.';
+            } else {
+                const trialEndsAt = userProfileData?.trialEndsAt ? new Date(userProfileData.trialEndsAt) : null;
+                const paidUntil = userProfileData?.paidUntil ? new Date(userProfileData.paidUntil) : null;
+
+                if (paidUntil && paidUntil > now) {
+                    isAuthorized = true;
+                } else if (trialEndsAt && trialEndsAt > now) {
+                    isAuthorized = true;
+                } else {
+                    isAuthorized = false;
+                    authDenialReason = 'Seu período de teste expirou ou sua assinatura está vencida. Contate o administrador para renovar o acesso.';
+                }
+            }
+        }
+    }
+
+    if (!user || !isAuthorized) {
+        return (
+            h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: 'var(--bg-primary)', padding: '20px' } },
+                h('div', { style: { padding: '40px', backgroundColor: 'var(--bg-card)', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center', border: '1px solid var(--border-color)' } },
+                    h('h1', { style: { marginBottom: '20px', color: 'var(--text-primary)', fontSize: '1.5em' } }, 'Acesso Restrito'),
+                    !user ? 
+                        h('div', null,
+                            h('p', { style: { marginBottom: '20px', color: 'var(--text-secondary)', lineHeight: '1.5' } }, 'Faça login para acessar o Gerador de Documentos Policiais. Você terá 7 dias de teste gratuito.'),
+                            
+                            authError && h('div', { style: { color: '#ef4444', marginBottom: '15px', padding: '10px', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderRadius: '4px', fontSize: '0.9em' } }, authError),
+                            
+                            h('form', { onSubmit: handleEmailAuth, style: { display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' } },
+                                h('input', { 
+                                    type: 'email', 
+                                    placeholder: 'E-mail',
+                                    value: email,
+                                    onChange: (e: any) => setEmail(e.target.value),
+                                    required: true,
+                                    class: 'input-field'
+                                }),
+                                h('input', { 
+                                    type: 'password', 
+                                    placeholder: 'Senha',
+                                    value: password,
+                                    onChange: (e: any) => setPassword(e.target.value),
+                                    required: true,
+                                    class: 'input-field'
+                                }),
+                                h('button', { type: 'submit', class: 'action-button', style: { width: '100%', padding: '12px', fontSize: '1em', fontWeight: 'bold' } }, 
+                                    isRegistering ? 'Criar Conta' : 'Entrar com E-mail'
+                                )
+                            ),
+                            
+                            h('div', { style: { marginBottom: '20px' } },
+                                h('button', { 
+                                    type: 'button',
+                                    onClick: () => setIsRegistering(!isRegistering),
+                                    style: { background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' } 
+                                }, isRegistering ? 'Já tem conta? Faça login' : 'Não tem conta? Registre-se')
+                            ),
+                            
+                            h('div', { style: { display: 'flex', alignItems: 'center', margin: '20px 0', color: 'var(--text-secondary)' } },
+                                h('div', { style: { flex: 1, height: '1px', backgroundColor: 'var(--border-color)' } }),
+                                h('span', { style: { padding: '0 10px', fontSize: '0.9em' } }, 'OU'),
+                                h('div', { style: { flex: 1, height: '1px', backgroundColor: 'var(--border-color)' } })
+                            ),
+
+                            h('button', { onClick: handleLogin, class: 'secondary-button', style: { width: '100%', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontSize: '1em', fontWeight: 'bold' } },
+                                h('svg', { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 48 48", width: "24px", height: "24px" },
+                                    h('path', { fill: "#FFC107", d: "M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z" }),
+                                    h('path', { fill: "#FF3D00", d: "M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z" }),
+                                    h('path', { fill: "#4CAF50", d: "M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z" }),
+                                    h('path', { fill: "#1976D2", d: "M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z" })
+                                ),
+                                'Entrar com Google'
+                            )
+                        ) :
+                        h('div', null,
+                            h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authDenialReason),
+                            h('p', { style: { marginBottom: '20px', color: 'var(--text-secondary)', lineHeight: '1.5', fontSize: '0.9em' } }, `Logado como: ${user.email}`),
+                            h('button', { onClick: handleLogout, class: 'secondary-button', style: { width: '100%', padding: '10px' } }, 'Sair / Tentar outra conta')
+                        )
+                )
+            )
+        );
+    }
+
     return (
         h('div', null,
             h('div', { class: 'app-header' },
@@ -2436,6 +2683,11 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                         )
                     ),
                     user ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9em' } },
+                        user.email === 'ricardoasdeandrade@gmail.com' && h('button', {
+                            onClick: () => { setShowAdminPanel(!showAdminPanel); if (!showAdminPanel) fetchAdminData(); },
+                            class: 'secondary-button',
+                            style: { padding: '4px 8px', fontSize: '0.9em', margin: 0 }
+                        }, 'Painel Admin'),
                         h('span', null, `👤 ${user.email}`),
                         h('button', { onClick: handleLogout, class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.9em', margin: 0 } }, 'Sair')
                     ) : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' } },
@@ -2458,6 +2710,90 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                     title: `Mudar para tema ${theme === 'light' ? 'escuro' : 'claro'}`
                 }, theme === 'light' ? '🌙' : '☀️')
             ),
+
+            showAdminPanel && user?.email === 'ricardoasdeandrade@gmail.com' && h('div', { style: { padding: '20px', margin: '20px', backgroundColor: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' } },
+                h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' } },
+                    h('h2', { style: { margin: 0, color: 'var(--text-primary)' } }, 'Painel de Controle Admin'),
+                    h('button', { onClick: () => setShowAdminPanel(false), class: 'secondary-button' }, 'Fechar')
+                ),
+                loadingAdmin ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, h('div', { class: 'spinner' }), 'Carregando dados...') : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '30px' } },
+                    h('div', null,
+                        h('h3', { style: { color: 'var(--text-secondary)', marginBottom: '10px' } }, `Usuários Cadastrados (${adminUsers.length})`),
+                        h('div', { style: { display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' } },
+                            adminUsers.map(u => {
+                                const isTrialActive = u.trialEndsAt ? new Date(u.trialEndsAt) > new Date() : false;
+                                const isPaidActive = u.paidUntil ? new Date(u.paidUntil) > new Date() : false;
+                                let accessStatusText = 'Expirado';
+                                let statusColor = '#ef4444';
+                                
+                                if (u.status === 'blocked') {
+                                    accessStatusText = 'Bloqueado';
+                                    statusColor = '#ef4444';
+                                } else if (isPaidActive) {
+                                    accessStatusText = `Pago até ${new Date(u.paidUntil).toLocaleDateString()}`;
+                                    statusColor = '#10b981';
+                                } else if (isTrialActive) {
+                                    accessStatusText = `Teste até ${new Date(u.trialEndsAt).toLocaleDateString()}`;
+                                    statusColor = '#f59e0b';
+                                }
+                                
+                                return h('div', { key: u.id, style: { padding: '15px', backgroundColor: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' } },
+                                    h('strong', { style: { display: 'block', fontSize: '1.1em' } }, u.email),
+                                    h('span', { style: { fontSize: '0.85em', color: 'var(--text-secondary)' } }, `ID: ${u.id}`),
+                                    h('span', { style: { fontSize: '0.9em', fontWeight: 'bold', color: statusColor } }, `Status: ${accessStatusText}`),
+                                    
+                                    h('div', { style: { display: 'flex', gap: '5px', marginTop: '10px', flexWrap: 'wrap' } },
+                                        h('button', { 
+                                            onClick: () => {
+                                                const d = new Date();
+                                                d.setMonth(d.getMonth() + 1);
+                                                updateUserAccess(u.id, { paidUntil: d.toISOString(), status: 'active' });
+                                            },
+                                            class: 'action-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, flex: 1 } 
+                                        }, '+30 Dias (Pago)'),
+                                        
+                                        u.status !== 'blocked' ? 
+                                            h('button', { 
+                                                onClick: () => updateUserAccess(u.id, { status: 'blocked' }),
+                                                class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, color: '#ef4444', borderColor: '#ef4444' } 
+                                            }, 'Bloquear')
+                                            :
+                                            h('button', { 
+                                                onClick: () => updateUserAccess(u.id, { status: 'active' }),
+                                                class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, color: '#10b981', borderColor: '#10b981' } 
+                                            }, 'Desbloquear')
+                                    )
+                                );
+                            })
+                        )
+                    ),
+                    h('div', null,
+                        h('h3', { style: { color: 'var(--text-secondary)', marginBottom: '10px' } }, 'Log de Tokens Utilizados'),
+                        h('div', { style: { overflowX: 'auto' } },
+                            h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: '0.9em' } },
+                                h('thead', { style: { backgroundColor: 'var(--bg-primary)', textAlign: 'left' } },
+                                    h('tr', null,
+                                        h('th', { style: { padding: '10px', borderBottom: '2px solid var(--border-color)' } }, 'Data/Hora'),
+                                        h('th', { style: { padding: '10px', borderBottom: '2px solid var(--border-color)' } }, 'Usuário'),
+                                        h('th', { style: { padding: '10px', borderBottom: '2px solid var(--border-color)' } }, 'Modelo'),
+                                        h('th', { style: { padding: '10px', borderBottom: '2px solid var(--border-color)' } }, 'Tokens')
+                                    )
+                                ),
+                                h('tbody', null,
+                                    adminLogs.length === 0 ? h('tr', null, h('td', { colSpan: 4, style: { padding: '15px', textAlign: 'center', color: 'var(--text-secondary)' } }, 'Nenhum registro encontrado.')) :
+                                    adminLogs.map(log => h('tr', { key: log.id, style: { borderBottom: '1px solid var(--border-color)' } },
+                                        h('td', { style: { padding: '10px' } }, new Date(log.date).toLocaleString()),
+                                        h('td', { style: { padding: '10px' } }, log.email),
+                                        h('td', { style: { padding: '10px' } }, log.model),
+                                        h('td', { style: { padding: '10px', fontWeight: 'bold' } }, log.tokens)
+                                    ))
+                                )
+                            )
+                        )
+                    )
+                )
+            ),
+
             h('div', { class: 'tab-navigation' },
                 h('button', {
                     onClick: () => setActiveTab('report'),

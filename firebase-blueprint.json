@@ -46,9 +46,58 @@
         }
       },
       "required": ["name", "type", "base64Data", "size"]
+    },
+    "tokenUsage": {
+      "title": "Token Usage",
+      "description": "Record of API tokens used by the user",
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "number"
+        },
+        "date": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": ["tokens", "date", "model"]
+    },
+    "userProfile": {
+      "title": "User Profile",
+      "description": "Basic user data like email for admin view",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "trialEndsAt": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "paidUntil": {
+          "type": "string"
+        }
+      },
+      "required": ["email"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/userProfile"
+      },
+      "description": "User profile"
+    },
+    "/users/{userId}/tokenUsage/{usageId}": {
+      "schema": {
+        "$ref": "#/entities/tokenUsage"
+      },
+      "description": "User's token usage records"
+    },
     "/users/{userId}/history/{historyId}": {
       "schema": {
         "$ref": "#/entities/historyItem"
