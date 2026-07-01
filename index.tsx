@@ -421,7 +421,7 @@ const App = () => {
         setLoadingAdmin(true);
         setAdminError('');
         try {
-            console.log("Fetching admin data...");
+            console.log("Fetching admin data for UID:", user.uid);
             const usersSnapshot = await getDocs(collection(db, 'users'));
             console.log("Users fetched:", usersSnapshot.docs.length);
             const usersData: any[] = [];
@@ -456,7 +456,7 @@ const App = () => {
             setAdminLogs(logsData);
         } catch (e: any) {
             console.error("Erro ao buscar dados de admin:", e);
-            setAdminError(`Erro geral: ${e.message}`);
+            setAdminError(`Erro geral: ${e.message}\n(UID: ${user?.uid}, Email: ${user?.email})`);
         }
         setLoadingAdmin(false);
     };

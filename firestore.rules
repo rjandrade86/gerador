@@ -18,7 +18,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return request.auth.token.email == 'ricardoasdeandrade@gmail.com';
+      return request.auth != null && (
+        (request.auth.token != null && request.auth.token.email == 'ricardoasdeandrade@gmail.com') ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'ricardoasdeandrade@gmail.com'
+      );
     }
 
     function isValidId(id) { 
@@ -61,14 +64,13 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow list: if isSignedIn() && isAdmin();
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
       allow create: if isSignedIn() && isOwner(userId);
       allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
       allow delete: if isSignedIn() && isAdmin();
       
       match /tokenUsage/{usageId} {
-        allow get, list: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
         allow create, update: if isSignedIn() && isOwner(userId) && isValidTokenUsage(incoming());
         allow delete: if false;
       }
