@@ -61,8 +61,11 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get, list: if isSignedIn();
-      allow write: if isSignedIn();
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && isAdmin();
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow delete: if isSignedIn() && isAdmin();
       
       match /tokenUsage/{usageId} {
         allow get, list: if isSignedIn() && (isOwner(userId) || isAdmin());
