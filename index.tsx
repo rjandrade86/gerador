@@ -17,13 +17,13 @@ const configs = (import.meta as any).glob('./firebase-applet-config.json', { eag
 const firebaseConfigImport = (configs['./firebase-applet-config.json'] as any)?.default || {};
 
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || firebaseConfigImport.apiKey,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || firebaseConfigImport.authDomain,
-  projectId: process.env.FIREBASE_PROJECT_ID || firebaseConfigImport.projectId,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseConfigImport.storageBucket,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || firebaseConfigImport.messagingSenderId,
-  appId: process.env.FIREBASE_APP_ID || firebaseConfigImport.appId,
-  firestoreDatabaseId: process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigImport.firestoreDatabaseId
+  apiKey: (process.env.FIREBASE_API_KEY || firebaseConfigImport.apiKey || '').trim(),
+  authDomain: (process.env.FIREBASE_AUTH_DOMAIN || firebaseConfigImport.authDomain || '').trim(),
+  projectId: (process.env.FIREBASE_PROJECT_ID || firebaseConfigImport.projectId || '').trim(),
+  storageBucket: (process.env.FIREBASE_STORAGE_BUCKET || firebaseConfigImport.storageBucket || '').trim(),
+  messagingSenderId: (process.env.FIREBASE_MESSAGING_SENDER_ID || firebaseConfigImport.messagingSenderId || '').trim(),
+  appId: (process.env.FIREBASE_APP_ID || firebaseConfigImport.appId || '').trim(),
+  firestoreDatabaseId: (process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseConfigImport.firestoreDatabaseId || '').trim()
 };
 
 let appInstance: any = null;
