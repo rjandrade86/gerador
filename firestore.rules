@@ -57,7 +57,10 @@ service cloud.firestore {
     }
 
     function isValidUserProfile(data) {
-      return data.keys().hasAll(['email']) && data.email is string;
+      return data.keys().hasAll(['email']) && data.email is string &&
+             (!data.keys().hasAny(['status']) || data.status is string) &&
+             (!data.keys().hasAny(['trialEndsAt']) || data.trialEndsAt is string) &&
+             (!data.keys().hasAny(['paidUntil']) || data.paidUntil is string);
     }
 
     match /users/{userId} {
