@@ -18,10 +18,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return request.auth != null && (
-        (request.auth.token != null && request.auth.token.email == 'ricardoasdeandrade@gmail.com') ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'ricardoasdeandrade@gmail.com'
-      );
+      return request.auth != null && (request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2' || (request.auth.token != null && request.auth.token.email == 'ricardoasdeandrade@gmail.com'));
     }
 
     function isValidId(id) { 
@@ -64,13 +61,13 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow read: if true;
       allow create: if isSignedIn() && isOwner(userId);
-      allow update: if isSignedIn() && (isOwner(userId) || isAdmin());
-      allow delete: if isSignedIn() && isAdmin();
+      allow update: if isSignedIn() && (isOwner(userId) || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
+      allow delete: if request.auth != null && request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2';
       
       match /tokenUsage/{usageId} {
-        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read: if true;
         allow create, update: if isSignedIn() && isOwner(userId) && isValidTokenUsage(incoming());
         allow delete: if false;
       }
