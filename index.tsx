@@ -11,7 +11,7 @@ import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel, Page
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, getDoc, query, where } from 'firebase/firestore';
 const configs = (import.meta as any).glob('./firebase-applet-config.json', { eager: true });
 const firebaseConfigImport = (configs['./firebase-applet-config.json'] as any)?.default || {};
@@ -439,6 +439,12 @@ const App = () => {
                 }
                 
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                
+                try {
+                    await sendEmailVerification(userCredential.user);
+                } catch (e) {
+                    console.error("Erro ao enviar e-mail de verificação:", e);
+                }
                 
                 try {
                     await setDoc(doc(db, `cpfRecords/${cpfRaw}`), { uid: userCredential.user.uid });
@@ -2644,7 +2650,10 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
     let authDenialReason = 'Acesso não autorizado.';
 
     if (user && (isAdmin || userProfileData)) {
-        if (isAdmin) {
+        if (!user.emailVerified && user.providerData.some(p => p.providerId === 'password')) {
+            isAuthorized = false;
+            authDenialReason = 'Por favor, confirme seu e-mail para acessar o sistema. Um link de verificação foi enviado para sua caixa de entrada.';
+        } else if (isAdmin) {
             isAuthorized = true;
         } else {
             const now = new Date();
@@ -2772,6 +2781,35 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                             authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authError),
                             !authError && h('p', { style: { marginBottom: '15px', color: '#ef4444', lineHeight: '1.5', fontWeight: 'bold' } }, authDenialReason),
                             h('p', { style: { marginBottom: '20px', color: 'var(--text-secondary)', lineHeight: '1.5', fontSize: '0.9em' } }, `Logado como: ${user.email}`),
+                            !user.emailVerified && user.providerData.some(p => p.providerId === 'password') && h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' } },
+                                h('button', { 
+                                    onClick: async () => {
+                                        if (user) {
+                                            try {
+                                                await sendEmailVerification(user);
+                                                alert("E-mail de verificação reenviado!");
+                                            } catch (e: any) {
+                                                alert("Erro ao enviar e-mail: " + e.message);
+                                            }
+                                        }
+                                    }, 
+                                    class: 'action-button', 
+                                    style: { width: '100%', padding: '10px' } 
+                                }, 'Reenviar E-mail'),
+                                h('button', { 
+                                    onClick: async () => {
+                                        if (user) {
+                                            await user.reload();
+                                            // The onAuthStateChanged might not trigger immediately on reload
+                                            // But setting a state will force a re-render.
+                                            // Since we use the user object directly, we should re-set it to trigger re-render
+                                            setUser({ ...user } as any);
+                                        }
+                                    }, 
+                                    class: 'secondary-button', 
+                                    style: { width: '100%', padding: '10px' } 
+                                }, 'Já confirmei (Atualizar)')
+                            ),
                             h('button', { onClick: handleLogout, class: 'secondary-button', style: { width: '100%', padding: '10px' } }, 'Sair / Tentar outra conta')
                         )
                 )
