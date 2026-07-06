@@ -12,7 +12,7 @@ import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, getDoc, query, where } from 'firebase/firestore';
 const configs = (import.meta as any).glob('./firebase-applet-config.json', { eager: true });
 const firebaseConfigImport = (configs['./firebase-applet-config.json'] as any)?.default || {};
 
@@ -197,6 +197,23 @@ function getDefaultTrainingData(): TrainingFile[] {
     });
 }
 
+const isValidCPF = (cpf: string) => {
+    cpf = cpf.replace(/[^\d]+/g, '');
+    if (cpf.length !== 11 || !!cpf.match(/(\d)\1{10}/)) return false;
+    const cpfArray = cpf.split('').map(el => parseInt(el));
+    const rest = (count: number) => (cpfArray.slice(0, count - 12).reduce((soma, el, index) => (soma + el * (count - index)), 0) * 10) % 11 % 10;
+    return rest(10) === cpfArray[9] && rest(11) === cpfArray[10];
+};
+
+const formatCPF = (value: string) => {
+    return value
+        .replace(/\D/g, '')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+        .replace(/(-\d{2})\d+?$/, '$1');
+};
+
 const App = () => {
     // Main state
     const [activeTab, setActiveTab] = useState<'report' | 'training' | 'analyzer' | 'concatenator' | 'formalizer' | 'transcriber' | 'history'>('report');
@@ -292,6 +309,7 @@ const App = () => {
     
     // Auth Form State
     const [email, setEmail] = useState('');
+    const [cpf, setCpf] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isRegistering, setIsRegistering] = useState(false);
@@ -396,10 +414,38 @@ const App = () => {
             setAuthError("Preencha email e senha.");
             return;
         }
+        if (isRegistering) {
+            if (!cpf) {
+                setAuthError("Preencha o CPF.");
+                return;
+            }
+            if (!isValidCPF(cpf)) {
+                setAuthError("CPF inválido.");
+                return;
+            }
+        }
         setAuthError('');
         try {
             if (isRegistering) {
-                await createUserWithEmailAndPassword(auth, email, password);
+                const cpfRaw = cpf.replace(/[^\d]+/g, '');
+                try {
+                    const cpfDoc = await getDoc(doc(db, `cpfRecords/${cpfRaw}`));
+                    if (cpfDoc.exists()) {
+                        setAuthError("Este CPF já está cadastrado em outra conta.");
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Erro ao verificar CPF:", e);
+                }
+                
+                const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                
+                try {
+                    await setDoc(doc(db, `cpfRecords/${cpfRaw}`), { uid: userCredential.user.uid });
+                    await setDoc(doc(db, `users/${userCredential.user.uid}`), { cpf: cpfRaw }, { merge: true });
+                } catch (e) {
+                    console.error("Erro ao registrar CPF:", e);
+                }
             } else {
                 await signInWithEmailAndPassword(auth, email, password);
             }
@@ -2645,6 +2691,15 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                                     required: true,
                                     class: 'input-field'
                                 }),
+                                isRegistering && h('input', { 
+                                    type: 'text', 
+                                    placeholder: 'CPF',
+                                    value: formatCPF(cpf),
+                                    onInput: (e: any) => setCpf(e.target.value),
+                                    required: true,
+                                    class: 'input-field',
+                                    maxLength: 14
+                                }),
                                 h('div', { style: { position: 'relative', width: '100%', display: 'flex', alignItems: 'center' } },
                                     h('input', { 
                                         type: showPassword ? 'text' : 'password', 
@@ -2824,6 +2879,7 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                                 
                                 return h('div', { key: u.id, style: { padding: '15px', backgroundColor: 'var(--bg-primary)', borderRadius: '8px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '8px' } },
                                     h('strong', { style: { display: 'block', fontSize: '1.1em' } }, u.email),
+                                    u.cpf && h('span', { style: { fontSize: '0.9em', color: 'var(--text-primary)' } }, `CPF: ${formatCPF(u.cpf)}`),
                                     h('span', { style: { fontSize: '0.85em', color: 'var(--text-secondary)' } }, `ID: ${u.id}`),
                                     h('span', { style: { fontSize: '0.9em', fontWeight: 'bold', color: statusColor } }, `Status: ${accessStatusText}`),
                                     

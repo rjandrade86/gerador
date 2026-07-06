@@ -5,6 +5,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /cpfRecords/{cpf} {
+      allow get: if true;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+    }
+
     match /users/{userId} {
       allow get: if request.auth != null && (request.auth.uid == userId || request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
       allow list: if request.auth != null && (request.auth.token.email == 'ricardoasdeandrade@gmail.com' || request.auth.uid == 'OxqvUl9FcFSTaWdFzyWHYFxrD1G2');
