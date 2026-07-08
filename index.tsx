@@ -2697,7 +2697,7 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
 
     if (!user || !isAuthorized) {
         return (
-            h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: 'var(--bg-primary)', padding: '20px' } },
+            h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: 'var(--bg-primary)', padding: '20px', flexDirection: 'column', gap: '20px' } },
                 h('div', { style: { padding: '40px', backgroundColor: 'var(--bg-card)', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%', textAlign: 'center', border: '1px solid var(--border-color)' } },
                     h('h1', { style: { marginBottom: '20px', color: 'var(--text-primary)', fontSize: '1.5em' } }, 'Acesso Restrito'),
                     !user ? 
@@ -2827,6 +2827,9 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                             ),
                             h('button', { onClick: handleLogout, class: 'secondary-button', style: { width: '100%', padding: '10px' } }, 'Sair / Tentar outra conta')
                         )
+                ),
+                h('div', { style: { color: 'var(--text-secondary)', fontSize: '0.9em', textAlign: 'center', marginTop: '10px' } },
+                    'Desenvolvido e administrado por: Escrivão Ricardo Andrade - Fone/whatsapp (55) 991355519'
                 )
             )
         );
