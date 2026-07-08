@@ -529,6 +529,21 @@ const App = () => {
         }
     };
 
+    const deleteUserAccount = async (userId: string, cpf?: string) => {
+        if (!confirm('Tem certeza que deseja excluir este usuário? Todos os dados vinculados serão perdidos.')) return;
+        try {
+            if (cpf) {
+                await deleteDoc(doc(db, `cpfRecords/${cpf}`));
+            }
+            await deleteDoc(doc(db, `users/${userId}`));
+            setAdminUsers(prev => prev.filter(u => u.id !== userId));
+            alert("Usuário excluído com sucesso.");
+        } catch (e) {
+            console.error("Erro ao excluir usuário:", e);
+            alert("Erro ao excluir usuário.");
+        }
+    };
+
     const renderErrorWithAction = (
         currentError: string, 
         clearErrorFn: () => void
@@ -2946,7 +2961,11 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                                             h('button', { 
                                                 onClick: () => updateUserAccess(u.id, { status: 'active' }),
                                                 class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, color: '#10b981', borderColor: '#10b981' } 
-                                            }, 'Desbloquear')
+                                            }, 'Desbloquear'),
+                                        h('button', { 
+                                            onClick: () => deleteUserAccount(u.id, u.cpf),
+                                            class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, color: '#fff', backgroundColor: '#ef4444', borderColor: '#ef4444' } 
+                                        }, 'Excluir')
                                     )
                                 );
                             })
