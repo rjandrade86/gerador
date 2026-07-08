@@ -373,7 +373,7 @@ const App = () => {
                     
                     // If the user document didn't exist in Firestore, or if we want to ensure it is kept updated:
                     try {
-                        await setDoc(userRef, { email: currentUser.email, ...profileData }, { merge: true });
+                        await setDoc(userRef, { email: currentUser.email, emailVerified: currentUser.emailVerified, ...profileData }, { merge: true });
                     } catch (e) {
                         console.warn("Erro ao salvar perfil no firestore, prosseguindo com dados em memória...", e);
                     }
@@ -2665,7 +2665,7 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
     let authDenialReason = 'Acesso não autorizado.';
 
     if (user && (isAdmin || userProfileData)) {
-        if (!user.emailVerified && user.providerData.some(p => p.providerId === 'password')) {
+        if (!user.emailVerified && user.providerData.some(p => p.providerId === 'password') && !userProfileData?.emailVerificationBypassed) {
             isAuthorized = false;
             authDenialReason = 'Por favor, confirme seu e-mail para acessar o sistema. Um link de verificação foi enviado para sua caixa de entrada. Se você está utilizando o e-mail funcional pode demorar alguns instantes para receber o e-mail de verificação, e pode ir para a caixa de spam (Lixo Eletrônico).';
         } else if (isAdmin) {
@@ -2935,8 +2935,17 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
                                     u.cpf && h('span', { style: { fontSize: '0.9em', color: 'var(--text-primary)' } }, `CPF: ${formatCPF(u.cpf)}`),
                                     h('span', { style: { fontSize: '0.85em', color: 'var(--text-secondary)' } }, `ID: ${u.id}`),
                                     h('span', { style: { fontSize: '0.9em', fontWeight: 'bold', color: statusColor } }, `Status: ${accessStatusText}`),
+                                    h('span', { style: { fontSize: '0.9em', fontWeight: 'bold', color: u.emailVerified || u.emailVerificationBypassed ? '#10b981' : '#ef4444' } }, `E-mail: ${u.emailVerified ? 'Verificado' : (u.emailVerificationBypassed ? 'Verificação Ignorada (Bypass)' : 'Não Verificado')}`),
                                     
                                     h('div', { style: { display: 'flex', gap: '5px', marginTop: '10px', flexWrap: 'wrap' } },
+                                        !u.emailVerified && !u.emailVerificationBypassed && h('button', { 
+                                            onClick: () => updateUserAccess(u.id, { emailVerificationBypassed: true }),
+                                            class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, flex: 1, borderColor: '#3b82f6', color: '#3b82f6' } 
+                                        }, 'Ignorar Verificação'),
+                                        !u.emailVerified && u.emailVerificationBypassed && h('button', { 
+                                            onClick: () => updateUserAccess(u.id, { emailVerificationBypassed: false }),
+                                            class: 'secondary-button', style: { padding: '4px 8px', fontSize: '0.85em', margin: 0, flex: 1, borderColor: '#f59e0b', color: '#f59e0b' } 
+                                        }, 'Exigir Verificação'),
                                         h('button', { 
                                             onClick: () => {
                                                 const d = new Date();
