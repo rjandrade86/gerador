@@ -2667,7 +2667,7 @@ Abaixo estão as transcrições brutas obtidas. Formate-as com enorme rigor segu
     if (user && (isAdmin || userProfileData)) {
         if (!user.emailVerified && user.providerData.some(p => p.providerId === 'password')) {
             isAuthorized = false;
-            authDenialReason = 'Por favor, confirme seu e-mail para acessar o sistema. Um link de verificação foi enviado para sua caixa de entrada.';
+            authDenialReason = 'Por favor, confirme seu e-mail para acessar o sistema. Um link de verificação foi enviado para sua caixa de entrada. Se você está utilizando o e-mail funcional pode demorar alguns instantes para receber o e-mail de verificação, e pode ir para a caixa de spam (Lixo Eletrônico).';
         } else if (isAdmin) {
             isAuthorized = true;
         } else {
